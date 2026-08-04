@@ -1,0 +1,24 @@
+/* Global reset — without this, browsers apply a default 8px margin around
+   <body>, which shows up as a thin gap around the whole app on phones and
+   tablets since nothing here was overriding it. */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+}
+
+body {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
