@@ -114,6 +114,34 @@ const NAME_FONTS = {
 };
 const NAME_FONTS_GOOGLE_QUERY = "family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker";
 
+// Section-heading font — template-level (not owner-chosen like NAME_FONTS),
+// so "Featured Menu", "Popular Items", etc. carry each template's identity
+// instead of every truck reading Oswald regardless of its palette/mood.
+const HEADING_FONTS = {
+  oswald: { label: "Oswald", family: "'Oswald', sans-serif" },
+  quicksand: { label: "Quicksand", family: "'Quicksand', sans-serif" },
+  fredoka: { label: "Fredoka", family: "'Fredoka', sans-serif" },
+};
+
+// Template-level decorative pattern, used for the menu-photo placeholder and
+// the footer divider strip. Same two-color formula as the old hardcoded
+// checkerboard, just swappable so each template gets its own texture instead
+// of every truck inheriting one diner-flag motif regardless of its vibe.
+function decorationPattern(key, colorA, colorB) {
+  if (key === "dots") return { backgroundImage: `radial-gradient(${colorA} 28%, transparent 30%)`, backgroundSize: "10px 10px" };
+  if (key === "scallop") return { backgroundImage: `linear-gradient(135deg, ${colorA} 25%, transparent 25.5%), linear-gradient(225deg, ${colorA} 25%, transparent 25.5%)`, backgroundSize: "14px 14px" };
+  return { backgroundImage: `repeating-conic-gradient(${colorA} 0% 25%, ${colorB} 0% 50%)`, backgroundSize: "16px 16px" }; // "checker" default
+}
+
+// Same decoration identity, expressed as a wash behind the hero headline for
+// trucks that haven't uploaded a photo yet — so "no photo" still reads as
+// that template's personality instead of an empty page.
+function heroWashCss(key, accent) {
+  if (key === "dots") return `radial-gradient(${accent}33 2px, transparent 2.5px) 0 0/22px 22px, radial-gradient(${accent}1A 2px, transparent 2.5px) 11px 11px/22px 22px`;
+  if (key === "scallop") return `linear-gradient(115deg, ${accent}29 0%, transparent 45%), linear-gradient(245deg, ${accent}1F 0%, transparent 40%)`;
+  return `radial-gradient(circle at 30% 20%, ${accent}22, transparent 60%)`; // "checker" default — existing look
+}
+
 // Builds the full color set for a truck, deriving borders/nav-bg/muted-text
 // from the theme's mode (dark/light) instead of those being hardcoded to
 // Los Papas' original dark palette everywhere they're used.
@@ -210,9 +238,10 @@ function TemplateThumb({ t }) {
   const isGrid = t.menu_layout === "grid";
   const cardCount = isGrid ? 2 : 3;
 
+  const deco = decorationPattern(t.decoration, t.color_red, t.color_card);
   const MiniMenuCard = ({ i }) => (
     <div style={{ background: t.color_card, border: `1px solid ${border}`, borderRadius: 3, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <div style={{ flex: 1, minHeight: 0, background: t.color_red, opacity: 0.55 }} />
+      <div style={{ flex: 1, minHeight: 0, ...deco }} />
       <div style={{ padding: 3, flexShrink: 0 }}>
         <div style={{ height: 2, width: "80%", borderRadius: 1, background: t.color_stone, marginBottom: 2 }} />
         <div style={{ height: 2.5, width: "40%", borderRadius: 1, background: t.color_gold }} />
@@ -1181,13 +1210,14 @@ function CustomerSite({ c, data, demoMode }) {
     }
   };
 
+  const deco = decorationPattern(data.theme?.decoration, c.red, c.cream);
   return (
     <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh", paddingBottom: cartCount ? 84 : 0 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&display=swap');
-        .script { font-family: 'Kaushan Script', cursive; } .mono { font-family: 'JetBrains Mono', monospace; } .display { font-family: 'Oswald', sans-serif; text-transform: uppercase; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&family=Quicksand:wght@500;600;700&family=Fredoka:wght@500;600;700&display=swap');
+        .script { font-family: 'Kaushan Script', cursive; } .mono { font-family: 'JetBrains Mono', monospace; } .display { font-family: ${HEADING_FONTS[data.theme?.heading_font]?.family || HEADING_FONTS.oswald.family}; text-transform: uppercase; }
         .hud-dot { animation: pulse 1.6s ease-in-out infinite; } @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-        .checker { background-image: repeating-conic-gradient(${c.red} 0% 25%, ${c.cream} 0% 50%); background-size: 16px 16px; }
+        .checker { background-image: ${deco.backgroundImage}; background-size: ${deco.backgroundSize}; }
         .scrollx::-webkit-scrollbar { display: none; }
       `}</style>
 
@@ -1214,7 +1244,7 @@ function CustomerSite({ c, data, demoMode }) {
       <section style={{ position: "relative", height: data.theme?.hero_photo_url ? 220 : 0, overflow: "hidden", backgroundImage: data.theme?.hero_photo_url ? `linear-gradient(${c.bg}26, ${c.bg}F5), url(${data.theme.hero_photo_url})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }} />
 
       <section style={{ position: "relative", padding: "28px 20px 40px", overflow: "hidden" }}>
-        {!data.theme?.hero_photo_url && <div style={{ position: "absolute", inset: 0, background: `radial-gradient(circle at 30% 20%, ${c.red}22, transparent 60%)` }} />}
+        {!data.theme?.hero_photo_url && <div style={{ position: "absolute", inset: 0, background: heroWashCss(data.theme?.decoration, c.red) }} />}
         <Reveal>
           <div style={{ position: "relative", zIndex: 1 }}>
             <span className="mono" style={{ fontSize: 11, letterSpacing: 3, color: c.gold }}>{(truck.tagline || "").toUpperCase()}</span>
@@ -2075,7 +2105,7 @@ function TemplateSwitcher({ c, truck, session, reload }) {
     await authedPatch(`truck_theme?truck_id=eq.${truck.id}`, {
       color_bg: t.color_bg, color_card: t.color_card, color_gold: t.color_gold,
       color_red: t.color_red, color_cream: t.color_cream, color_stone: t.color_stone,
-      mode: t.mode, menu_layout: t.menu_layout,
+      mode: t.mode, menu_layout: t.menu_layout, heading_font: t.heading_font, decoration: t.decoration,
     });
     setApplying("");
     reload?.();
