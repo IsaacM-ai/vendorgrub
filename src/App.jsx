@@ -1,6 +1,18 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, Image as ImageIcon } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
+
+// Vite doesn't resolve Leaflet's default marker image paths, so without
+// this the default pin silently fails to render (a well-known Leaflet +
+// bundler gotcha, not specific to this app).
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({ iconRetinaUrl: markerIcon2x, iconUrl: markerIcon, shadowUrl: markerShadow });
 
 /* =========================================================================
    LIVE BACKEND CONNECTION
@@ -242,6 +254,65 @@ function TemplateThumb({ t }) {
   );
 }
 
+// Mutually-exclusive Popular/Special-Deal picker for a menu item — one tag
+// max per item, since a real owner is only ever spotlighting a best-seller
+// OR running a promo on a given item, not both. Deal items get a short
+// optional note (the actual "20% off" / "Buy 1 Get 1" detail) since a bare
+// badge alone doesn't tell the customer what the deal is.
+function PromoTagPicker({ c, item, onSetTag, onSetNote }) {
+  const setTag = (tag) => onSetTag(item, item.promo_tag === tag ? null : tag);
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button
+          onClick={() => setTag("popular")}
+          style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, background: item.promo_tag === "popular" ? `${c.gold}22` : "none", border: `1px solid ${item.promo_tag === "popular" ? c.gold : "#2A2420"}`, color: item.promo_tag === "popular" ? c.gold : c.stone, borderRadius: 999, padding: "5px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+        >
+          <Star size={11} /> POPULAR
+        </button>
+        <button
+          onClick={() => setTag("deal")}
+          style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, background: item.promo_tag === "deal" ? `${c.red}22` : "none", border: `1px solid ${item.promo_tag === "deal" ? c.red : "#2A2420"}`, color: item.promo_tag === "deal" ? c.red : c.stone, borderRadius: 999, padding: "5px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+        >
+          <Flame size={11} /> SPECIAL DEAL
+        </button>
+      </div>
+      {item.promo_tag === "deal" && (
+        <input
+          defaultValue={item.promo_note || ""}
+          onBlur={(e) => onSetNote(item, e.target.value)}
+          placeholder="Deal details — e.g. 20% off today, Buy 1 Get 1"
+          style={{ width: "100%", background: c.bg, border: "1px solid #2A2420", borderRadius: 6, padding: "6px 8px", color: c.cream, fontSize: 11, marginTop: 6 }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Click-to-drop-a-pin location picker for the owner dashboard — no address
+// typing, no geocoding service, no API key. Falls back to a Corpus Christi
+// view (where VendorGrub is based) until the owner has set a pin.
+const NO_PIN_CENTER = [27.8006, -97.3964];
+function LocationClickHandler({ onPick }) {
+  useMapEvents({ click(e) { onPick(e.latlng.lat, e.latlng.lng); } });
+  return null;
+}
+function LocationPinPicker({ lat, lng, onPick }) {
+  const hasPin = lat != null && lng != null;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ height: 200, borderRadius: 10, overflow: "hidden" }}>
+        <MapContainer center={hasPin ? [lat, lng] : NO_PIN_CENTER} zoom={hasPin ? 14 : 11} style={{ height: "100%", width: "100%" }}>
+          <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          {hasPin && <Marker position={[lat, lng]} />}
+          <LocationClickHandler onPick={onPick} />
+        </MapContainer>
+      </div>
+      <p style={{ fontSize: 10, color: "#8C8074", marginTop: 6 }}>Tap the map to drop a pin where you're parked.</p>
+    </div>
+  );
+}
+
 /* Loads everything needed to render the storefront + feed the chatbot, live from Supabase */
 function useTruckData() {
   const [state, setState] = useState({ loading: true, error: null, truck: null, theme: null, menu: [], location: null, faqs: [], gallery: [], loyalty: null });
@@ -249,7 +320,7 @@ function useTruckData() {
   const reload = useCallback(async () => {
     if (!PATH_SLUG) { setState((s) => ({ ...s, loading: false, error: null, truck: null })); return; }
     try {
-      const truckRes = await rest(`trucks?slug=eq.${PATH_SLUG}&select=id,slug,name,tagline,subline,phone,delivery_radius,delivery_fee,rating,review_count,is_active,is_listed`).then((r) => r.json());
+      const truckRes = await rest(`trucks?slug=eq.${PATH_SLUG}&select=id,slug,name,tagline,subline,phone,delivery_radius,delivery_fee,rating,review_count,is_active,is_listed,about_text`).then((r) => r.json());
       const truck = truckRes?.[0];
       if (!truck) throw new Error("Truck not found");
 
@@ -798,7 +869,7 @@ function DemoSite() {
 
   useEffect(() => {
     (async () => {
-      const truckRes = await rest(`trucks?slug=eq.los-papas&select=id,slug,name,tagline,subline,phone,delivery_radius,delivery_fee,rating,review_count`).then((r) => r.json());
+      const truckRes = await rest(`trucks?slug=eq.los-papas&select=id,slug,name,tagline,subline,phone,delivery_radius,delivery_fee,rating,review_count,about_text`).then((r) => r.json());
       const truck = truckRes?.[0];
       if (!truck) { setData((s) => ({ ...s, loading: false })); return; }
       const [themeRes, menuRes, locRes, faqRes, galRes] = await Promise.all([
@@ -1029,6 +1100,60 @@ function CustomerSite({ c, data, demoMode }) {
   }, 0);
   const total = itemsTotal + (fulfillment === "delivery" ? Number(truck.delivery_fee || 0) : 0);
 
+  // Shared by the Featured Menu grid/scroll and the curated Popular Items /
+  // Special Deals shelves, so a menu-item card looks and behaves identically
+  // everywhere it appears. `asScroll` overrides the truck's own menu_layout
+  // for curated shelves, which read better as a horizontal strip regardless
+  // of how the full catalog below is laid out.
+  const renderCard = (item, i, asScroll) => {
+    const isGrid = !asScroll && data.theme?.menu_layout === "grid";
+    const inCart = cart[item.id] || 0;
+    return (
+      <Reveal key={item.id} delay={i * 80}>
+        <div style={{ ...(isGrid ? { width: "100%" } : { scrollSnapAlign: "start", width: 250, flexShrink: 0 }), background: c.card, borderRadius: 16, overflow: "hidden", border: `1px solid ${c.border}`, opacity: item.sold_out ? 0.5 : 1 }}>
+          <div onClick={() => { setQuickView(item); setModalQty(1); }} className="checker" style={{ height: 130, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", backgroundImage: item.photo_url ? `url(${item.photo_url})` : undefined, backgroundSize: "cover", backgroundPosition: "center", cursor: "pointer" }}>
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(14,11,9,0.15), rgba(14,11,9,0.75))" }} />
+            {item.tag && !item.sold_out && (
+              <span style={{ position: "absolute", top: 10, left: 10, background: c.red, color: "#fff", fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 999, display: "flex", alignItems: "center", gap: 4, zIndex: 1 }}>
+                <Flame size={10} /> {item.tag}
+              </span>
+            )}
+            {item.sold_out && <span style={{ position: "absolute", top: 10, left: 10, background: c.borderStrong, color: c.stone, fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 999, zIndex: 1 }}>SOLD OUT</span>}
+            {!item.photo_url && <span className="mono" style={{ position: "relative", zIndex: 1, color: c.stone, fontSize: 10 }}>[ photo: {item.name} ]</span>}
+          </div>
+          <div style={{ padding: 14 }}>
+            <div onClick={() => { setQuickView(item); setModalQty(1); }} style={{ cursor: "pointer" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{item.name}</h3>
+              <p style={{ fontSize: 12, color: c.stone, marginBottom: 10, lineHeight: 1.4, minHeight: 32 }}>{item.description}</p>
+            </div>
+            {item.promo_tag === "deal" && item.promo_note && (
+              <p style={{ fontSize: 11, color: c.red, fontWeight: 700, marginBottom: 10 }}>🏷 {item.promo_note}</p>
+            )}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <span className="mono" style={{ color: c.gold, fontWeight: 700, fontSize: 16 }}>${Number(item.price).toFixed(2)}</span>
+              <div style={{ display: "flex", gap: 6, fontSize: 10, color: c.stone, alignItems: "center" }}><Clock size={11} /> {item.prep_time}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <SpiceDots level={item.spice_level} c={c} />
+              {inCart > 0 && (
+                <div id={`qty-pill-${item.id}`} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, background: c.bg, borderRadius: 999, padding: "4px 8px" }}>
+                  <button onClick={() => changeQty(item.id, -1)} style={{ background: "none", border: "none", color: c.cream, cursor: "pointer" }}><Minus size={13} /></button>
+                  <span className="mono" style={{ fontSize: 12, width: 14, textAlign: "center" }}>{inCart}</span>
+                  <button onClick={() => changeQty(item.id, 1)} style={{ background: "none", border: "none", color: c.cream, cursor: "pointer" }}><Plus size={13} /></button>
+                </div>
+              )}
+            </div>
+            <button id={`add-btn-${item.id}`} disabled={item.sold_out} onClick={(e) => { addToOrder(item); burstFromButton(e.currentTarget, item); }} style={{ position: "relative", overflow: "visible", width: "100%", background: item.sold_out ? c.borderStrong : c.red, color: "#fff", border: "none", padding: "10px", borderRadius: 10, fontWeight: 700, fontSize: 12, cursor: item.sold_out ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <ShoppingCart size={13} /> {item.sold_out ? "SOLD OUT" : "ADD TO ORDER"}
+            </button>
+          </div>
+        </div>
+      </Reveal>
+    );
+  };
+  const popularItems = menu.filter((m) => m.promo_tag === "popular");
+  const dealItems = menu.filter((m) => m.promo_tag === "deal");
+
   const confirmOrder = async () => {
     setSubmitting(true);
     const res = demoMode
@@ -1106,61 +1231,69 @@ function CustomerSite({ c, data, demoMode }) {
             <h2 className="display" style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>Featured Menu</h2>
           </div>
         </Reveal>
-        {(() => {
-          const isGrid = data.theme?.menu_layout === "grid";
-          const renderCard = (item, i) => {
-            const inCart = cart[item.id] || 0;
-            return (
-              <Reveal key={item.id} delay={i * 80}>
-                <div style={{ ...(isGrid ? { width: "100%" } : { scrollSnapAlign: "start", width: 250, flexShrink: 0 }), background: c.card, borderRadius: 16, overflow: "hidden", border: `1px solid ${c.border}`, opacity: item.sold_out ? 0.5 : 1 }}>
-                  <div onClick={() => { setQuickView(item); setModalQty(1); }} className="checker" style={{ height: 130, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", backgroundImage: item.photo_url ? `url(${item.photo_url})` : undefined, backgroundSize: "cover", backgroundPosition: "center", cursor: "pointer" }}>
-                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(14,11,9,0.15), rgba(14,11,9,0.75))" }} />
-                    {item.tag && !item.sold_out && (
-                      <span style={{ position: "absolute", top: 10, left: 10, background: c.red, color: "#fff", fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 999, display: "flex", alignItems: "center", gap: 4, zIndex: 1 }}>
-                        <Flame size={10} /> {item.tag}
-                      </span>
-                    )}
-                    {item.sold_out && <span style={{ position: "absolute", top: 10, left: 10, background: c.borderStrong, color: c.stone, fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 999, zIndex: 1 }}>SOLD OUT</span>}
-                    {!item.photo_url && <span className="mono" style={{ position: "relative", zIndex: 1, color: c.stone, fontSize: 10 }}>[ photo: {item.name} ]</span>}
-                  </div>
-                  <div style={{ padding: 14 }}>
-                    <div onClick={() => { setQuickView(item); setModalQty(1); }} style={{ cursor: "pointer" }}>
-                      <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{item.name}</h3>
-                      <p style={{ fontSize: 12, color: c.stone, marginBottom: 10, lineHeight: 1.4, minHeight: 32 }}>{item.description}</p>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                      <span className="mono" style={{ color: c.gold, fontWeight: 700, fontSize: 16 }}>${Number(item.price).toFixed(2)}</span>
-                      <div style={{ display: "flex", gap: 6, fontSize: 10, color: c.stone, alignItems: "center" }}><Clock size={11} /> {item.prep_time}</div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                      <SpiceDots level={item.spice_level} c={c} />
-                      {inCart > 0 && (
-                        <div id={`qty-pill-${item.id}`} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, background: c.bg, borderRadius: 999, padding: "4px 8px" }}>
-                          <button onClick={() => changeQty(item.id, -1)} style={{ background: "none", border: "none", color: c.cream, cursor: "pointer" }}><Minus size={13} /></button>
-                          <span className="mono" style={{ fontSize: 12, width: 14, textAlign: "center" }}>{inCart}</span>
-                          <button onClick={() => changeQty(item.id, 1)} style={{ background: "none", border: "none", color: c.cream, cursor: "pointer" }}><Plus size={13} /></button>
-                        </div>
-                      )}
-                    </div>
-                    <button id={`add-btn-${item.id}`} disabled={item.sold_out} onClick={(e) => { addToOrder(item); burstFromButton(e.currentTarget, item); }} style={{ position: "relative", overflow: "visible", width: "100%", background: item.sold_out ? c.borderStrong : c.red, color: "#fff", border: "none", padding: "10px", borderRadius: 10, fontWeight: 700, fontSize: 12, cursor: item.sold_out ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                      <ShoppingCart size={13} /> {item.sold_out ? "SOLD OUT" : "ADD TO ORDER"}
-                    </button>
-                  </div>
-                </div>
-              </Reveal>
-            );
-          };
-          return isGrid ? (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "0 20px 8px" }}>
-              {menu.map((item, i) => renderCard(item, i))}
-            </div>
-          ) : (
-            <div className="scrollx" style={{ display: "flex", gap: 14, overflowX: "auto", padding: "0 20px 8px", scrollSnapType: "x mandatory" }}>
-              {menu.map((item, i) => renderCard(item, i))}
-            </div>
-          );
-        })()}
+        {data.theme?.menu_layout === "grid" ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "0 20px 8px" }}>
+            {menu.map((item, i) => renderCard(item, i))}
+          </div>
+        ) : (
+          <div className="scrollx" style={{ display: "flex", gap: 14, overflowX: "auto", padding: "0 20px 8px", scrollSnapType: "x mandatory" }}>
+            {menu.map((item, i) => renderCard(item, i))}
+          </div>
+        )}
       </section>
+
+      {popularItems.length > 0 && (
+        <section style={{ padding: "8px 0 32px" }}>
+          <Reveal>
+            <div style={{ padding: "0 20px", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+              <Star size={16} color={c.gold} />
+              <h2 className="display" style={{ fontSize: 22, fontWeight: 700 }}>Popular Items</h2>
+            </div>
+          </Reveal>
+          <div className="scrollx" style={{ display: "flex", gap: 14, overflowX: "auto", padding: "0 20px 8px", scrollSnapType: "x mandatory" }}>
+            {popularItems.map((item, i) => renderCard(item, i, true))}
+          </div>
+        </section>
+      )}
+
+      {dealItems.length > 0 && (
+        <section style={{ padding: "8px 0 32px", background: c.card, borderTop: `1px solid ${c.border}`, borderBottom: `1px solid ${c.border}` }}>
+          <Reveal>
+            <div style={{ padding: "20px 20px 16px", display: "flex", alignItems: "center", gap: 8 }}>
+              <Flame size={16} color={c.red} />
+              <h2 className="display" style={{ fontSize: 22, fontWeight: 700 }}>Special Deals</h2>
+            </div>
+          </Reveal>
+          <div className="scrollx" style={{ display: "flex", gap: 14, overflowX: "auto", padding: "0 20px 20px", scrollSnapType: "x mandatory" }}>
+            {dealItems.map((item, i) => renderCard(item, i, true))}
+          </div>
+        </section>
+      )}
+
+      {truck.about_text && (
+        <section style={{ padding: "36px 20px" }}>
+          <Reveal>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>OUR STORY</span>
+            <h2 className="display" style={{ fontSize: 22, fontWeight: 700, margin: "6px 0 12px" }}>About {truck.name}</h2>
+            <p style={{ color: c.stone, fontSize: 14, lineHeight: 1.7, maxWidth: 480, whiteSpace: "pre-wrap" }}>{truck.about_text}</p>
+          </Reveal>
+        </section>
+      )}
+
+      {location?.lat != null && location?.lng != null && (
+        <section style={{ padding: "0 20px 36px" }}>
+          <Reveal>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>FIND US</span>
+            <h2 className="display" style={{ fontSize: 22, fontWeight: 700, margin: "6px 0 14px" }}>Where We're Parked</h2>
+          </Reveal>
+          <div style={{ height: 220, borderRadius: 16, overflow: "hidden", border: `1px solid ${c.border}` }}>
+            <MapContainer center={[location.lat, location.lng]} zoom={15} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
+              <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <Marker position={[location.lat, location.lng]} />
+            </MapContainer>
+          </div>
+        </section>
+      )}
 
       <section style={{ padding: "36px 20px", background: c.card, borderTop: `1px solid ${c.border}`, borderBottom: `1px solid ${c.border}` }}>
         <Reveal>
@@ -1662,6 +1795,7 @@ function TruckProfilePanel({ c, truck, theme, session, reload }) {
   const [tagline, setTagline] = useState(truck.tagline || "");
   const [subline, setSubline] = useState(truck.subline || "");
   const [phone, setPhone] = useState(truck.phone || "");
+  const [aboutText, setAboutText] = useState(truck.about_text || "");
   const [fontKey, setFontKey] = useState(theme?.font_key || "kaushan");
   const [heroPreview, setHeroPreview] = useState(theme?.hero_photo_url || null);
   const [uploading, setUploading] = useState(false);
@@ -1676,7 +1810,7 @@ function TruckProfilePanel({ c, truck, theme, session, reload }) {
       if (heroFile) {
         hero_photo_url = await uploadPhoto(heroFile, `trucks/${truck.id}/theme/hero-${Date.now()}.${heroFile.name.split(".").pop()}`, session.access_token);
       }
-      const res = await fn("owner-profile-update", { slug: truck.slug, name, tagline, subline, phone, font_key: overrideFontKey || fontKey, ...(hero_photo_url ? { hero_photo_url } : {}) }, session.access_token);
+      const res = await fn("owner-profile-update", { slug: truck.slug, name, tagline, subline, phone, about_text: aboutText, font_key: overrideFontKey || fontKey, ...(hero_photo_url ? { hero_photo_url } : {}) }, session.access_token);
       if (res.error) throw new Error(res.error);
       setSaved(true);
       reload?.();
@@ -1719,6 +1853,9 @@ function TruckProfilePanel({ c, truck, theme, session, reload }) {
       <input value={tagline} onChange={(e) => setTagline(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 10, fontSize: 14 }} />
       <label className="mono" style={{ fontSize: 10, color: c.stone }}>PHONE</label>
       <input value={phone} onChange={(e) => setPhone(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
+
+      <label className="mono" style={{ fontSize: 10, color: c.stone }}>ABOUT — shown in the "About Vendor" section of your site</label>
+      <textarea value={aboutText} onChange={(e) => setAboutText(e.target.value)} rows={4} placeholder="Tell customers your story — how you started, what makes your food different, where you're from…" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 13, fontFamily: "inherit", resize: "vertical" }} />
 
       {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
       <button onClick={() => save(null)} disabled={uploading} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
@@ -2014,6 +2151,8 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
   const [spot, setSpot] = useState(initialLocation?.spot || "");
   const [until, setUntil] = useState(initialLocation?.open_until || "");
   const [status, setStatus] = useState(initialLocation?.status || "OPEN");
+  const [lat, setLat] = useState(initialLocation?.lat ?? null);
+  const [lng, setLng] = useState(initialLocation?.lng ?? null);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [menu, setMenu] = useState(initialMenu);
@@ -2050,7 +2189,7 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
 
   const saveLocation = async () => {
     setSaveError("");
-    const res = await authedPatch(`truck_location?truck_id=eq.${truck.id}`, { spot, open_until: until, status });
+    const res = await authedPatch(`truck_location?truck_id=eq.${truck.id}`, { spot, open_until: until, status, lat, lng });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       setSaveError(err.message || "Update failed — check you're logged in as admin.");
@@ -2064,6 +2203,15 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
     const next = !item.sold_out;
     setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, sold_out: next } : m)));
     await authedPatch(`menu_items?id=eq.${item.id}`, { sold_out: next });
+  };
+
+  const setPromoTag = async (item, tag) => {
+    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, promo_tag: tag } : m)));
+    await authedPatch(`menu_items?id=eq.${item.id}`, { promo_tag: tag });
+  };
+  const setPromoNote = async (item, note) => {
+    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, promo_note: note } : m)));
+    await authedPatch(`menu_items?id=eq.${item.id}`, { promo_note: note });
   };
 
   const updatePrice = async (item, newPrice) => {
@@ -2249,6 +2397,7 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
             <input value={spot} onChange={(e) => setSpot(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 12, fontSize: 14 }} />
             <label className="mono" style={{ fontSize: 10, color: c.stone }}>OPEN UNTIL</label>
             <input value={until} onChange={(e) => setUntil(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
+            <LocationPinPicker lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} />
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "OPEN" ? c.green : "#2A2420"}`, background: status === "OPEN" ? `${c.green}22` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
               <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "CLOSED" ? c.red : "#2A2420"}`, background: status === "CLOSED" ? `${c.red}22` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
@@ -2368,6 +2517,7 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
                         {item.sold_out ? <><EyeOff size={11} /> SOLD OUT</> : <><Eye size={11} /> AVAILABLE</>}
                       </button>
                     </div>
+                    <PromoTagPicker c={c} item={item} onSetTag={setPromoTag} onSetNote={setPromoNote} />
                   </div>
                 </div>
               ))}
@@ -2425,6 +2575,8 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
   const [spot, setSpot] = useState(initialLocation?.spot || "");
   const [until, setUntil] = useState(initialLocation?.open_until || "");
   const [status, setStatus] = useState(initialLocation?.status || "OPEN");
+  const [lat, setLat] = useState(initialLocation?.lat ?? null);
+  const [lng, setLng] = useState(initialLocation?.lng ?? null);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [menu, setMenu] = useState(initialMenu);
@@ -2523,7 +2675,7 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
 
   const saveLocation = async () => {
     setSaveError("");
-    const res = await authedPatch(`truck_location?truck_id=eq.${truck.id}`, { spot, open_until: until, status });
+    const res = await authedPatch(`truck_location?truck_id=eq.${truck.id}`, { spot, open_until: until, status, lat, lng });
     if (!res.ok) { setSaveError("Update failed."); return; }
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
@@ -2533,6 +2685,15 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
     const next = !item.sold_out;
     setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, sold_out: next } : m)));
     await authedPatch(`menu_items?id=eq.${item.id}`, { sold_out: next });
+  };
+
+  const setPromoTag = async (item, tag) => {
+    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, promo_tag: tag } : m)));
+    await authedPatch(`menu_items?id=eq.${item.id}`, { promo_tag: tag });
+  };
+  const setPromoNote = async (item, note) => {
+    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, promo_note: note } : m)));
+    await authedPatch(`menu_items?id=eq.${item.id}`, { promo_note: note });
   };
 
   const addFaq = async () => {
@@ -2581,6 +2742,7 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
             <input value={spot} onChange={(e) => setSpot(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 12, fontSize: 14 }} />
             <label className="mono" style={{ fontSize: 10, color: c.stone }}>OPEN UNTIL</label>
             <input value={until} onChange={(e) => setUntil(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
+            <LocationPinPicker lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} />
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "OPEN" ? c.green : "#2A2420"}`, background: status === "OPEN" ? `${c.green}22` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
               <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "CLOSED" ? c.red : "#2A2420"}`, background: status === "CLOSED" ? `${c.red}22` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
@@ -2699,6 +2861,7 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
                         {item.sold_out ? <><EyeOff size={11} /> SOLD OUT</> : <><Eye size={11} /> AVAILABLE</>}
                       </button>
                     </div>
+                    <PromoTagPicker c={c} item={item} onSetTag={setPromoTag} onSetNote={setPromoNote} />
                   </div>
                 </div>
               ))}
