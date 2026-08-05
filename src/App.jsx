@@ -186,6 +186,62 @@ function SpiceDots({ level, c }) {
   return <span style={{ display: "inline-flex", gap: 2 }}>{[0, 1, 2].map((i) => <Flame key={i} size={12} color={i < level ? c.red : "#3A322C"} fill={i < level ? c.red : "none"} />)}</span>;
 }
 
+// Miniature, non-interactive replica of the real CustomerSite layout (nav,
+// live-status strip, hero, menu cards) drawn as proportioned bars from a
+// template row's own mode/menu_layout/colors — so the onboarding picker
+// shows what the page looks like, not just what colors it uses, and can
+// never drift from the fields that actually drive the real storefront.
+function TemplateThumb({ t }) {
+  const isLight = t.mode === "light";
+  const navBg = isLight ? "#FDE9EF" : "#0A0807";
+  const border = isLight ? "#F3D9E2" : "#2A2420";
+  const isGrid = t.menu_layout === "grid";
+  const cardCount = isGrid ? 2 : 3;
+
+  const MiniMenuCard = ({ i }) => (
+    <div style={{ background: t.color_card, border: `1px solid ${border}`, borderRadius: 3, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1, minHeight: 0, background: t.color_red, opacity: 0.55 }} />
+      <div style={{ padding: 3, flexShrink: 0 }}>
+        <div style={{ height: 2, width: "80%", borderRadius: 1, background: t.color_stone, marginBottom: 2 }} />
+        <div style={{ height: 2.5, width: "40%", borderRadius: 1, background: t.color_gold }} />
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ width: 84, height: 84, borderRadius: 9, overflow: "hidden", flexShrink: 0, background: t.color_bg, display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 6px 3px", flexShrink: 0 }}>
+        <span style={{ width: 26, height: 5, borderRadius: 2, background: t.color_gold, display: "block" }} />
+        <span style={{ width: 12, height: 7, borderRadius: 4, background: t.color_gold, display: "block" }} />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 6px", background: navBg, flexShrink: 0 }}>
+        <span style={{ width: 3, height: 3, borderRadius: "50%", background: t.color_gold, flexShrink: 0, display: "block" }} />
+        <span style={{ flex: 1, height: 2.5, borderRadius: 2, background: t.color_gold, opacity: 0.5, display: "block" }} />
+      </div>
+      <div style={{ padding: "7px 6px 4px", flexShrink: 0 }}>
+        <span style={{ display: "block", width: "30%", height: 2.5, borderRadius: 2, background: t.color_gold, marginBottom: 4, opacity: 0.85 }} />
+        <span style={{ display: "block", width: "62%", height: 8, borderRadius: 2, background: t.color_cream, marginBottom: 4 }} />
+        <span style={{ display: "block", width: "45%", height: 2.5, borderRadius: 2, background: t.color_stone }} />
+      </div>
+      <span style={{ display: "block", width: "34%", height: 2.5, borderRadius: 2, background: t.color_gold, opacity: 0.85, margin: "5px 0 5px 6px", flexShrink: 0 }} />
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          padding: "0 6px 6px",
+          display: "grid",
+          gap: 4,
+          ...(isGrid
+            ? { gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr" }
+            : { gridAutoFlow: "column", gridAutoColumns: "47%", overflow: "hidden" }),
+        }}
+      >
+        {Array.from({ length: cardCount }).map((_, i) => <MiniMenuCard key={i} i={i} />)}
+      </div>
+    </div>
+  );
+}
+
 /* Loads everything needed to render the storefront + feed the chatbot, live from Supabase */
 function useTruckData() {
   const [state, setState] = useState({ loading: true, error: null, truck: null, theme: null, menu: [], location: null, faqs: [], gallery: [], loyalty: null });
@@ -430,24 +486,22 @@ function SelfOnboard() {
                 <button
                   key={t.key}
                   onClick={() => setForm((s) => ({ ...s, template_key: t.key }))}
-                  style={{ textAlign: "left", background: t.color_bg, border: `2px solid ${form.template_key === t.key ? b.teal : "#2A2420"}`, borderRadius: 12, padding: 14, cursor: "pointer" }}
+                  style={{ display: "grid", gridTemplateColumns: "84px 1fr", gap: 12, alignItems: "center", textAlign: "left", background: form.template_key === t.key ? "rgba(47,191,212,0.1)" : b.card, border: `2px solid ${form.template_key === t.key ? b.teal : b.border}`, borderRadius: 12, padding: 10, cursor: "pointer" }}
                 >
-                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                    {[t.color_gold, t.color_red, t.color_cream, t.color_stone].map((clr, i) => (
-                      <span key={i} style={{ width: 18, height: 18, borderRadius: "50%", background: clr, display: "inline-block" }} />
-                    ))}
+                  <TemplateThumb t={t} />
+                  <div>
+                    <div style={{ color: b.white, fontWeight: 700, fontSize: 14 }}>{t.name}</div>
+                    <div style={{ color: b.stone, fontSize: 11, marginTop: 2 }}>{t.description}</div>
                   </div>
-                  <div style={{ color: t.color_cream, fontWeight: 700, fontSize: 14 }}>{t.name}</div>
-                  <div style={{ color: t.color_stone, fontSize: 11, marginTop: 2 }}>{t.description}</div>
                 </button>
               ))}
               {[1, 2].map((n) => (
-                <div key={n} style={{ background: b.card, border: `2px dashed ${b.border}`, borderRadius: 12, padding: 14, opacity: 0.5, position: "relative" }}>
-                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                    {[0, 1, 2, 3].map((i) => <span key={i} style={{ width: 18, height: 18, borderRadius: "50%", background: "#333", display: "inline-block" }} />)}
+                <div key={n} style={{ display: "grid", gridTemplateColumns: "84px 1fr", gap: 12, alignItems: "center", background: b.card, border: `2px dashed ${b.border}`, borderRadius: 12, padding: 10, opacity: 0.5, position: "relative" }}>
+                  <div style={{ width: 84, height: 84, borderRadius: 9, background: "#1C1C1C", border: `1px solid ${b.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <ImageIcon size={22} color={b.stone} />
                   </div>
                   <div style={{ color: b.stone, fontWeight: 700, fontSize: 14 }}>Design {n + 1}</div>
-                  <span className="vg-mono" style={{ position: "absolute", top: 14, right: 14, fontSize: 9, color: b.teal, border: `1px solid ${b.teal}`, borderRadius: 999, padding: "3px 8px" }}>COMING SOON</span>
+                  <span className="vg-mono" style={{ position: "absolute", top: 10, right: 10, fontSize: 9, color: b.teal, border: `1px solid ${b.teal}`, borderRadius: 999, padding: "3px 8px", background: b.bg }}>COMING SOON</span>
                 </div>
               ))}
             </div>
