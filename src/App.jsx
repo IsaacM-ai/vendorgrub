@@ -175,6 +175,7 @@ const HEADING_FONTS = {
   oswald: { label: "Oswald", family: "'Oswald', sans-serif" },
   quicksand: { label: "Quicksand", family: "'Quicksand', sans-serif" },
   fredoka: { label: "Fredoka", family: "'Fredoka', sans-serif" },
+  orbitron: { label: "Orbitron", family: "'Orbitron', sans-serif" },
 };
 
 // Template-level decorative pattern, used for the menu-photo placeholder and
@@ -184,15 +185,17 @@ const HEADING_FONTS = {
 function decorationPattern(key, colorA, colorB) {
   if (key === "dots") return { backgroundImage: `radial-gradient(${colorA} 28%, transparent 30%)`, backgroundSize: "10px 10px" };
   if (key === "scallop") return { backgroundImage: `linear-gradient(135deg, ${colorA} 25%, transparent 25.5%), linear-gradient(225deg, ${colorA} 25%, transparent 25.5%)`, backgroundSize: "14px 14px" };
+  if (key === "circuit") return { backgroundImage: `linear-gradient(${colorA}55 1px, transparent 1px), linear-gradient(90deg, ${colorA}55 1px, transparent 1px)`, backgroundSize: "18px 18px" };
   return { backgroundImage: `repeating-conic-gradient(${colorA} 0% 25%, ${colorB} 0% 50%)`, backgroundSize: "16px 16px" }; // "checker" default
 }
 
 // Same decoration identity, expressed as a wash behind the hero headline for
 // trucks that haven't uploaded a photo yet — so "no photo" still reads as
 // that template's personality instead of an empty page.
-function heroWashCss(key, accent) {
+function heroWashCss(key, accent, accent2) {
   if (key === "dots") return `radial-gradient(${accent}33 2px, transparent 2.5px) 0 0/22px 22px, radial-gradient(${accent}1A 2px, transparent 2.5px) 11px 11px/22px 22px`;
   if (key === "scallop") return `linear-gradient(115deg, ${accent}29 0%, transparent 45%), linear-gradient(245deg, ${accent}1F 0%, transparent 40%)`;
+  if (key === "circuit") return `radial-gradient(circle at 20% 15%, ${accent}3D, transparent 55%), radial-gradient(circle at 85% 75%, ${(accent2 || accent)}3D, transparent 55%)`;
   return `radial-gradient(circle at 30% 20%, ${accent}22, transparent 60%)`; // "checker" default — existing look
 }
 
@@ -210,6 +213,7 @@ function buildColors(themeRow) {
     red: t.color_red || COLORS_FALLBACK.red,
     cream: t.color_cream || COLORS_FALLBACK.cream,
     stone: t.color_stone || COLORS_FALLBACK.stone,
+    accent2: t.color_accent2 || null,
     green: COLORS_FALLBACK.green,
     mode,
     border: isLight ? "#F3D9E2" : "#2A2420",
@@ -278,6 +282,25 @@ function FitText({ text, maxSize = 11, minSize = 7.5, style, className }) {
 
 function SpiceDots({ level, c }) {
   return <span style={{ display: "inline-flex", gap: 2 }}>{[0, 1, 2].map((i) => <Flame key={i} size={12} color={i < level ? c.red : "#3A322C"} fill={i < level ? c.red : "none"} />)}</span>;
+}
+
+// Sci-fi HUD-style corner accents, the CSS-buildable read on the reference
+// image's futuristic framing — four small absolutely-positioned L-shapes,
+// no image assets, works over any background.
+function CornerBrackets({ color, size = 22 }) {
+  const corner = (pos) => ({
+    position: "absolute", width: size, height: size, borderColor: color, opacity: 0.8,
+    ...(pos === "tl" && { top: 10, left: 10, borderTop: "2px solid", borderLeft: "2px solid" }),
+    ...(pos === "tr" && { top: 10, right: 10, borderTop: "2px solid", borderRight: "2px solid" }),
+    ...(pos === "bl" && { bottom: 10, left: 10, borderBottom: "2px solid", borderLeft: "2px solid" }),
+    ...(pos === "br" && { bottom: 10, right: 10, borderBottom: "2px solid", borderRight: "2px solid" }),
+  });
+  return (
+    <>
+      <span style={corner("tl")} /><span style={corner("tr")} />
+      <span style={corner("bl")} /><span style={corner("br")} />
+    </>
+  );
 }
 
 // Miniature, non-interactive replica of the real CustomerSite layout (nav,
@@ -1212,6 +1235,11 @@ function CustomerSite({ c, data, demoMode }) {
   }, 0);
   const total = itemsTotal + (fulfillment === "delivery" ? Number(truck.delivery_fee || 0) : 0);
 
+  // "circuit" is currently the one template (Neon Pulse) built around glow/
+  // glass treatment rather than a flat card + simple pattern — gated on a
+  // real theme field rather than the template key so it stays data-driven.
+  const isNeon = data.theme?.decoration === "circuit" && !!c.accent2;
+
   // Shared by the Featured Menu grid/scroll and the curated Popular Items /
   // Special Deals shelves, so a menu-item card looks and behaves identically
   // everywhere it appears. `asScroll` overrides the truck's own menu_layout
@@ -1222,7 +1250,14 @@ function CustomerSite({ c, data, demoMode }) {
     const inCart = cart[item.id] || 0;
     return (
       <Reveal key={item.id} delay={i * 80}>
-        <div style={{ ...(isGrid ? { width: "100%" } : { scrollSnapAlign: "start", width: 250, flexShrink: 0 }), background: c.card, borderRadius: 16, overflow: "hidden", border: `1px solid ${c.border}`, opacity: item.sold_out ? 0.5 : 1 }}>
+        <div style={{
+          ...(isGrid ? { width: "100%" } : { scrollSnapAlign: "start", width: 250, flexShrink: 0 }),
+          background: isNeon ? `${c.card}CC` : c.card,
+          backdropFilter: isNeon ? "blur(10px)" : undefined,
+          borderRadius: 16, overflow: "hidden", opacity: item.sold_out ? 0.5 : 1,
+          border: isNeon ? `1px solid ${c.accent2}66` : `1px solid ${c.border}`,
+          boxShadow: isNeon ? `0 0 18px ${c.accent2}26` : undefined,
+        }}>
           <div onClick={() => { setQuickView(item); setModalQty(1); }} className="checker" style={{ height: 130, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", backgroundImage: item.photo_url ? `url(${item.photo_url})` : undefined, backgroundSize: "cover", backgroundPosition: "center", cursor: "pointer" }}>
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(14,11,9,0.15), rgba(14,11,9,0.75))" }} />
             {item.tag && !item.sold_out && (
@@ -1255,7 +1290,7 @@ function CustomerSite({ c, data, demoMode }) {
                 </div>
               )}
             </div>
-            <button id={`add-btn-${item.id}`} disabled={item.sold_out} onClick={(e) => { addToOrder(item); burstFromButton(e.currentTarget, item); }} style={{ position: "relative", overflow: "visible", width: "100%", background: item.sold_out ? c.borderStrong : c.red, color: "#fff", border: "none", padding: "10px", borderRadius: 10, fontWeight: 700, fontSize: 12, cursor: item.sold_out ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <button id={`add-btn-${item.id}`} disabled={item.sold_out} onClick={(e) => { addToOrder(item); burstFromButton(e.currentTarget, item); }} style={{ position: "relative", overflow: "visible", width: "100%", background: item.sold_out ? c.borderStrong : c.red, color: "#fff", border: "none", padding: "10px", borderRadius: 10, fontWeight: 700, fontSize: 12, cursor: item.sold_out ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, boxShadow: isNeon && !item.sold_out ? `0 0 14px ${c.red}66` : undefined }}>
               <ShoppingCart size={13} /> {item.sold_out ? "SOLD OUT" : "ADD TO ORDER"}
             </button>
           </div>
@@ -1297,11 +1332,14 @@ function CustomerSite({ c, data, demoMode }) {
   return (
     <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh", paddingBottom: cartCount ? 84 : 0 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&family=Quicksand:wght@500;600;700&family=Fredoka:wght@500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&family=Quicksand:wght@500;600;700&family=Fredoka:wght@500;600;700&family=Orbitron:wght@600;700;800&display=swap');
         .script { font-family: 'Kaushan Script', cursive; } .mono { font-family: 'JetBrains Mono', monospace; } .display { font-family: ${HEADING_FONTS[data.theme?.heading_font]?.family || HEADING_FONTS.oswald.family}; text-transform: uppercase; }
         .hud-dot { animation: pulse 1.6s ease-in-out infinite; } @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         .checker { background-image: ${deco.backgroundImage}; background-size: ${deco.backgroundSize}; }
         .scrollx::-webkit-scrollbar { display: none; }
+        .neon-gradient-text { background-size: 200% auto; -webkit-background-clip: text; background-clip: text; color: transparent; animation: neonShift 5s ease-in-out infinite; }
+        @keyframes neonShift { 0%{background-position:0% center} 50%{background-position:100% center} 100%{background-position:0% center} }
+        @media (prefers-reduced-motion: reduce) { .neon-gradient-text { animation: none; background-position: 0% center; } }
       `}</style>
 
       <nav style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)", borderBottom: `1px solid ${c.border}` }}>
@@ -1326,12 +1364,22 @@ function CustomerSite({ c, data, demoMode }) {
 
       <section style={{ position: "relative", height: data.theme?.hero_photo_url ? 220 : 0, overflow: "hidden", backgroundImage: data.theme?.hero_photo_url ? `linear-gradient(${c.bg}26, ${c.bg}F5), url(${data.theme.hero_photo_url})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }} />
 
-      <section style={{ position: "relative", padding: "84px 20px 40px", overflow: "hidden" }}>
-        {!data.theme?.hero_photo_url && <div style={{ position: "absolute", inset: 0, background: heroWashCss(data.theme?.decoration, c.red) }} />}
+      <section style={{ position: "relative", padding: "84px 20px 40px", overflow: "hidden", border: isNeon ? `1px solid ${c.accent2}33` : undefined, borderLeft: "none", borderRight: "none" }}>
+        {!data.theme?.hero_photo_url && <div style={{ position: "absolute", inset: 0, background: heroWashCss(data.theme?.decoration, c.red, c.accent2) }} />}
+        {isNeon && <CornerBrackets color={c.accent2} />}
         <Reveal>
           <div style={{ position: "relative", zIndex: 1 }}>
             <span className="mono" style={{ fontSize: 11, letterSpacing: 3, color: c.gold }}>{(truck.tagline || "").toUpperCase()}</span>
-            <h1 style={{ fontFamily: (NAME_FONTS[data.theme?.font_key]?.family) || NAME_FONTS.kaushan.family, fontSize: "clamp(40px, 12vw, 56px)", color: c.cream, lineHeight: 1, margin: "8px 0 12px" }}>{truck.name}</h1>
+            <h1
+              className={isNeon ? "neon-gradient-text" : undefined}
+              style={{
+                fontFamily: (NAME_FONTS[data.theme?.font_key]?.family) || NAME_FONTS.kaushan.family,
+                fontSize: "clamp(40px, 12vw, 56px)", lineHeight: 1, margin: "8px 0 12px",
+                ...(isNeon ? { backgroundImage: `linear-gradient(90deg, ${c.cream}, ${c.gold}, ${c.accent2}, ${c.cream})` } : { color: c.cream }),
+              }}
+            >
+              {truck.name}
+            </h1>
             <p style={{ color: c.stone, fontSize: 15, maxWidth: 340 }}>{truck.subline}</p>
           </div>
         </Reveal>
