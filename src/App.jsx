@@ -2249,8 +2249,8 @@ function SetupChecklist({ c, truck, theme, menu, location, onGo }) {
   );
 }
 
-// Owner-facing colour editor. Previously admin-only, which left real truck
-// owners with no way to adjust their own background/accent/text colours
+// Owner-facing color editor. Previously admin-only, which left real truck
+// owners with no way to adjust their own background/accent/text colors
 // after picking a template at onboarding.
 function ThemeColorsPanel({ c, truck, theme, session, reload }) {
   const FIELDS = [
@@ -2277,14 +2277,22 @@ function ThemeColorsPanel({ c, truck, theme, session, reload }) {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        setError(err.message || `Could not save colours (${res.status}).`);
+        setError(err.message || `Could not save colors (${res.status}).`);
+        return;
+      }
+      // RLS can block a write and still return 200 with an empty array —
+      // that's the exact failure mode that made this panel look like it
+      // worked while silently changing nothing.
+      const rows = await res.json().catch(() => null);
+      if (Array.isArray(rows) && rows.length === 0) {
+        setError("Nothing was saved — you may not have permission to edit this truck. Contact support.");
         return;
       }
       setSaved(true);
       reload?.();
       setTimeout(() => setSaved(false), 1800);
     } catch (e) {
-      setError(`Could not save colours — ${e.message}.`);
+      setError(`Could not save colors — ${e.message}.`);
     } finally {
       setSaving(false);
     }
@@ -2292,7 +2300,7 @@ function ThemeColorsPanel({ c, truck, theme, session, reload }) {
 
   return (
     <div>
-      {/* Live preview so the effect of a colour is obvious before saving */}
+      {/* Live preview so the effect of a color is obvious before saving */}
       <div style={{ background: draft.color_bg, border: `1px solid #2A2420`, borderRadius: 10, padding: 12, marginBottom: 14 }}>
         <div style={{ color: draft.color_gold, fontSize: 10, letterSpacing: 2, fontWeight: 700, marginBottom: 6 }}>PREVIEW</div>
         <div style={{ background: draft.color_card, borderRadius: 8, padding: 10 }}>
@@ -2327,7 +2335,7 @@ function ThemeColorsPanel({ c, truck, theme, session, reload }) {
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <button onClick={() => setDraft(seed())} style={{ flex: 1, background: "none", border: `1px solid #2A2420`, color: c.stone, padding: "11px", borderRadius: 10, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Undo changes</button>
         <button onClick={save} disabled={saving} style={{ flex: 2, background: c.gold, color: "#1A1210", border: "none", padding: "11px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
-          {saving ? "Saving…" : saved ? "✓ Saved — live on your site" : "Save Colours"}
+          {saving ? "Saving…" : saved ? "✓ Saved — live on your site" : "Save Colors"}
         </button>
       </div>
     </div>
@@ -2337,6 +2345,7 @@ function ThemeColorsPanel({ c, truck, theme, session, reload }) {
 function TemplateSwitcher({ c, truck, theme, session, reload }) {
   const [templates, setTemplates] = useState(null);
   const [applying, setApplying] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     rest(`site_templates?select=*&order=sort_order`).then((r) => r.json()).then(setTemplates);
@@ -2346,13 +2355,31 @@ function TemplateSwitcher({ c, truck, theme, session, reload }) {
 
   const apply = async (t) => {
     setApplying(t.key);
-    await authedPatch(`truck_theme?truck_id=eq.${truck.id}`, {
-      color_bg: t.color_bg, color_card: t.color_card, color_gold: t.color_gold,
-      color_red: t.color_red, color_cream: t.color_cream, color_stone: t.color_stone,
-      mode: t.mode, menu_layout: t.menu_layout, heading_font: t.heading_font, decoration: t.decoration,
-    });
-    setApplying("");
-    reload?.();
+    setError("");
+    try {
+      const res = await authedPatch(`truck_theme?truck_id=eq.${truck.id}`, {
+        color_bg: t.color_bg, color_card: t.color_card, color_gold: t.color_gold,
+        color_red: t.color_red, color_cream: t.color_cream, color_stone: t.color_stone,
+        mode: t.mode, menu_layout: t.menu_layout, heading_font: t.heading_font, decoration: t.decoration,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.message || `Could not switch template (${res.status}).`);
+        return;
+      }
+      // RLS can block a write and still return 200 with an empty array —
+      // that would otherwise look like a successful switch that did nothing.
+      const rows = await res.json().catch(() => null);
+      if (Array.isArray(rows) && rows.length === 0) {
+        setError("Nothing was changed — you may not have permission to edit this truck. Contact support.");
+        return;
+      }
+      reload?.();
+    } catch (e) {
+      setError(`Could not switch template — ${e.message}.`);
+    } finally {
+      setApplying("");
+    }
   };
 
   // Same layout thumbnails the owner chose from at signup, so switching
@@ -2361,7 +2388,7 @@ function TemplateSwitcher({ c, truck, theme, session, reload }) {
 
   return (
     <div>
-      <p style={{ fontSize: 11.5, color: c.stone, marginBottom: 12, lineHeight: 1.5 }}>Pick a new look. This replaces your colours, layout and lettering in one tap — you can still fine-tune afterwards.</p>
+      <p style={{ fontSize: 11.5, color: c.stone, marginBottom: 12, lineHeight: 1.5 }}>Pick a new look. This replaces your colors, layout and lettering in one tap — you can still fine-tune afterwards.</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {!templates && <p style={{ fontSize: 12, color: c.stone }}>Loading designs…</p>}
         {templates?.map((t) => (
@@ -2384,6 +2411,7 @@ function TemplateSwitcher({ c, truck, theme, session, reload }) {
           </button>
         ))}
       </div>
+      {error && <p style={{ color: c.red, fontSize: 11, marginTop: 10 }}>{error}</p>}
     </div>
   );
 }
@@ -3058,10 +3086,10 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
         <Reveal>
           <div>
             <p style={{ fontSize: 12.5, color: c.stone, marginBottom: 14, lineHeight: 1.5 }}>Most trucks just pick a style and leave it. Open a section below only if you want to change something.</p>
-            <Collapsible c={c} icon={<LayoutDashboard size={17} />} title="Change your style" summary="Colours, layout and lettering in one tap" defaultOpen>
+            <Collapsible c={c} icon={<LayoutDashboard size={17} />} title="Change your style" summary="Colors, layout and lettering in one tap" defaultOpen>
               <TemplateSwitcher c={c} truck={truck} theme={theme} session={session} reload={reload} />
             </Collapsible>
-            <Collapsible c={c} icon={<Palette size={17} />} title="Fine-tune colours" summary="Optional — set your own background, accent and text colours">
+            <Collapsible c={c} icon={<Palette size={17} />} title="Fine-tune colors" summary="Optional — set your own background, accent and text colors">
               <ThemeColorsPanel c={c} truck={truck} theme={theme} session={session} reload={reload} />
             </Collapsible>
           </div>
