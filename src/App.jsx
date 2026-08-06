@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, Image as ImageIcon } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -88,15 +88,69 @@ async function restoreSession() {
   return null;
 }
 
-// Admin-only: uploads a photo to Storage and returns its public URL. Path convention:
+// Supabase access tokens expire in ~1hr. The dashboard restores its session
+// once on mount, so without these helpers every write silently starts
+// failing after an hour and only a page refresh fixes it. These keep the
+// token fresh for the lifetime of the page instead.
+async function getFreshToken(fallbackToken) {
+  const s = loadSessionRaw();
+  if (!s?.refresh_token) return fallbackToken;
+  if (s.expires_at && Date.now() < s.expires_at - 60000) return s.access_token || fallbackToken;
+  const refreshed = await refreshAuthSession(s.refresh_token);
+  if (!refreshed) return fallbackToken;
+  saveSession(refreshed);
+  return refreshed.access_token;
+}
+
+// Forces a refresh regardless of the stored expiry — for when the server
+// rejected a token we believed was still good (clock skew, revoked session).
+async function forceRefreshToken() {
+  const s = loadSessionRaw();
+  if (!s?.refresh_token) return null;
+  const refreshed = await refreshAuthSession(s.refresh_token);
+  if (!refreshed) return null;
+  saveSession(refreshed);
+  return refreshed.access_token;
+}
+
+// Authenticated PostgREST call that survives token expiry: refreshes up
+// front when stale, and retries once if the server still says 401/403.
+async function authedRest(path, opts = {}) {
+  const token = await getFreshToken(opts.token);
+  const res = await rest(path, { ...opts, token });
+  if (res.status !== 401 && res.status !== 403) return res;
+  const retryToken = await forceRefreshToken();
+  if (!retryToken || retryToken === token) return res;
+  return rest(path, { ...opts, token: retryToken });
+}
+
+// Same contract for Edge Function calls, which return parsed JSON rather
+// than a Response, so expiry is detected from the error payload instead.
+async function authedFn(name, body, token) {
+  const fresh = await getFreshToken(token);
+  const out = await fn(name, body, fresh);
+  const looksUnauthorized = out?.error && /session|jwt|token|unauthor/i.test(String(out.error));
+  if (!looksUnauthorized) return out;
+  const retryToken = await forceRefreshToken();
+  if (!retryToken || retryToken === fresh) return out;
+  return fn(name, body, retryToken);
+}
+
+// Uploads a photo to Storage and returns its public URL. Path convention:
 // trucks/{truck_id}/{menu|gallery|theme}/{filename}
 async function uploadPhoto(file, path, token) {
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/truck-photos/${path}`, {
+  const doUpload = (t) => fetch(`${SUPABASE_URL}/storage/v1/object/truck-photos/${path}`, {
     method: "POST",
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type, "x-upsert": "true" },
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${t}`, "Content-Type": file.type, "x-upsert": "true" },
     body: file,
   });
-  if (!res.ok) throw new Error("Upload failed — check you're logged in as admin");
+  const fresh = await getFreshToken(token);
+  let res = await doUpload(fresh);
+  if (res.status === 401 || res.status === 403) {
+    const retryToken = await forceRefreshToken();
+    if (retryToken && retryToken !== fresh) res = await doUpload(retryToken);
+  }
+  if (!res.ok) throw new Error("Upload failed — try signing out and back in");
   return `${SUPABASE_URL}/storage/v1/object/public/truck-photos/${path}`;
 }
 
@@ -326,8 +380,22 @@ function LocationClickHandler({ onPick }) {
   useMapEvents({ click(e) { onPick(e.latlng.lat, e.latlng.lng); } });
   return null;
 }
-function LocationPinPicker({ lat, lng, onPick }) {
+// Leaflet measures its container on mount; inside a dashboard panel that is
+// still settling (or a tab that was hidden) it can come up blank until
+// something forces a re-measure.
+function InvalidateOnMount() {
+  const map = useMap();
+  useEffect(() => {
+    const t = setTimeout(() => map.invalidateSize(), 120);
+    return () => clearTimeout(t);
+  }, [map]);
+  return null;
+}
+
+function LocationPinPicker({ lat, lng, onPick, onClear, c }) {
   const hasPin = lat != null && lng != null;
+  const muted = c?.stone || "#8C8074";
+  const good = c?.green || "#4CA466";
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ height: 200, borderRadius: 10, overflow: "hidden" }}>
@@ -335,9 +403,24 @@ function LocationPinPicker({ lat, lng, onPick }) {
           <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           {hasPin && <Marker position={[lat, lng]} />}
           <LocationClickHandler onPick={onPick} />
+          <InvalidateOnMount />
         </MapContainer>
       </div>
-      <p style={{ fontSize: 10, color: "#8C8074", marginTop: 6 }}>Tap the map to drop a pin where you're parked.</p>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+        {hasPin ? (
+          <>
+            <span style={{ fontSize: 10.5, color: good, fontWeight: 700, flex: 1 }}>
+              ✓ Pin set — customers see a map on your site.{" "}
+              <span className="mono" style={{ color: muted, fontWeight: 400 }}>{Number(lat).toFixed(4)}, {Number(lng).toFixed(4)}</span>
+            </span>
+            {onClear && (
+              <button onClick={onClear} style={{ background: "none", border: "none", color: muted, fontSize: 10, textDecoration: "underline", cursor: "pointer", flexShrink: 0 }}>Remove pin</button>
+            )}
+          </>
+        ) : (
+          <span style={{ fontSize: 10.5, color: muted }}>Tap the map to drop a pin where you're parked, then press Update Location to save it.</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -382,7 +465,7 @@ function useTruckData() {
   // Orders require an authenticated (admin/owner) request — fetched separately
   // by the dashboard once a session exists, not on public page load.
   const loadOrders = useCallback(async (truckId, token) => {
-    const res = await rest(`orders?truck_id=eq.${truckId}&order=created_at.desc`, { token });
+    const res = await authedRest(`orders?truck_id=eq.${truckId}&order=created_at.desc`, { token });
     return res.ok ? res.json() : [];
   }, []);
 
@@ -1243,7 +1326,7 @@ function CustomerSite({ c, data, demoMode }) {
 
       <section style={{ position: "relative", height: data.theme?.hero_photo_url ? 220 : 0, overflow: "hidden", backgroundImage: data.theme?.hero_photo_url ? `linear-gradient(${c.bg}26, ${c.bg}F5), url(${data.theme.hero_photo_url})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }} />
 
-      <section style={{ position: "relative", padding: "28px 20px 40px", overflow: "hidden" }}>
+      <section style={{ position: "relative", padding: "84px 20px 40px", overflow: "hidden" }}>
         {!data.theme?.hero_photo_url && <div style={{ position: "absolute", inset: 0, background: heroWashCss(data.theme?.decoration, c.red) }} />}
         <Reveal>
           <div style={{ position: "relative", zIndex: 1 }}>
@@ -1310,8 +1393,17 @@ function CustomerSite({ c, data, demoMode }) {
         </section>
       )}
 
+      <section style={{ padding: "36px 20px", background: c.card, borderTop: `1px solid ${c.border}`, borderBottom: `1px solid ${c.border}` }}>
+        <Reveal>
+          <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>FEEDING A CROWD?</span>
+          <h2 className="display" style={{ fontSize: 22, fontWeight: 700, margin: "6px 0 10px" }}>Book {truck.name} for Your Event</h2>
+          <p style={{ color: c.stone, fontSize: 13, marginBottom: 16, maxWidth: 420 }}>Birthdays, offices, weekends — tell us the headcount and date, we'll handle the rest.</p>
+          <a href={`tel:${truck.phone}`} style={{ background: c.gold, color: "#1A1210", padding: "12px 22px", borderRadius: 999, fontWeight: 700, fontSize: 14, textDecoration: "none", display: "inline-block" }}>Request Catering</a>
+        </Reveal>
+      </section>
+
       {location?.lat != null && location?.lng != null && (
-        <section style={{ padding: "0 20px 36px" }}>
+        <section style={{ padding: "32px 20px 8px" }}>
           <Reveal>
             <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>FIND US</span>
             <h2 className="display" style={{ fontSize: 22, fontWeight: 700, margin: "6px 0 14px" }}>Where We're Parked</h2>
@@ -1322,17 +1414,13 @@ function CustomerSite({ c, data, demoMode }) {
               <Marker position={[location.lat, location.lng]} />
             </MapContainer>
           </div>
+          {location.spot && (
+            <p style={{ fontSize: 12, color: c.stone, marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+              <MapPin size={13} color={c.gold} /> {location.spot}
+            </p>
+          )}
         </section>
       )}
-
-      <section style={{ padding: "36px 20px", background: c.card, borderTop: `1px solid ${c.border}`, borderBottom: `1px solid ${c.border}` }}>
-        <Reveal>
-          <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>FEEDING A CROWD?</span>
-          <h2 className="display" style={{ fontSize: 22, fontWeight: 700, margin: "6px 0 10px" }}>Book {truck.name} for Your Event</h2>
-          <p style={{ color: c.stone, fontSize: 13, marginBottom: 16, maxWidth: 420 }}>Birthdays, offices, weekends — tell us the headcount and date, we'll handle the rest.</p>
-          <a href={`tel:${truck.phone}`} style={{ background: c.gold, color: "#1A1210", padding: "12px 22px", borderRadius: 999, fontWeight: 700, fontSize: 14, textDecoration: "none", display: "inline-block" }}>Request Catering</a>
-        </Reveal>
-      </section>
 
       <footer style={{ padding: "36px 20px 28px" }}>
         <span style={{ fontFamily: (NAME_FONTS[data.theme?.font_key]?.family) || NAME_FONTS.kaushan.family, fontSize: 24, color: c.gold }}>{truck.name}</span>
@@ -1602,7 +1690,7 @@ function OwnerDashboard({ c: cIn, data, session, setSession, goSite }) {
   useEffect(() => {
     if (!session) return;
     (async () => {
-      const res = await rest(`admins?auth_user_id=eq.${session.userId}&select=auth_user_id`, { token: session.access_token });
+      const res = await authedRest(`admins?auth_user_id=eq.${session.userId}&select=auth_user_id`, { token: session.access_token });
       const rows = res.ok ? await res.json() : [];
       setRole(rows.length > 0 ? "admin" : "owner");
     })();
@@ -1679,7 +1767,7 @@ function AdminHome() {
   useEffect(() => {
     if (!session) return;
     (async () => {
-      const res = await rest(`admins?auth_user_id=eq.${session.userId}&select=auth_user_id`, { token: session.access_token });
+      const res = await authedRest(`admins?auth_user_id=eq.${session.userId}&select=auth_user_id`, { token: session.access_token });
       const rows = res.ok ? await res.json() : [];
       setRole(rows.length > 0 ? "admin" : "not_admin");
     })();
@@ -1840,7 +1928,7 @@ function TruckProfilePanel({ c, truck, theme, session, reload }) {
       if (heroFile) {
         hero_photo_url = await uploadPhoto(heroFile, `trucks/${truck.id}/theme/hero-${Date.now()}.${heroFile.name.split(".").pop()}`, session.access_token);
       }
-      const res = await fn("owner-profile-update", { slug: truck.slug, name, tagline, subline, phone, about_text: aboutText, font_key: overrideFontKey || fontKey, ...(hero_photo_url ? { hero_photo_url } : {}) }, session.access_token);
+      const res = await authedFn("owner-profile-update", { slug: truck.slug, name, tagline, subline, phone, about_text: aboutText, font_key: overrideFontKey || fontKey, ...(hero_photo_url ? { hero_photo_url } : {}) }, session.access_token);
       if (res.error) throw new Error(res.error);
       setSaved(true);
       reload?.();
@@ -1905,7 +1993,7 @@ function DeliverySettingsPanel({ c, truck, session }) {
   const save = async () => {
     setError("");
     setSaving(true);
-    const res = await fn("set-delivery-settings", { slug: truck.slug, delivery_fee: fee, delivery_radius: radius }, session.access_token);
+    const res = await authedFn("set-delivery-settings", { slug: truck.slug, delivery_fee: fee, delivery_radius: radius }, session.access_token);
     setSaving(false);
     if (res.error) { setError(res.error); return; }
     setSaved(true);
@@ -1945,10 +2033,10 @@ function LoyaltyPanel({ c, truck, session }) {
   const [redeemFor, setRedeemFor] = useState(null); // phone of member being redeemed
   const [error, setError] = useState("");
 
-  const authedGet = (path) => rest(path, { token: session.access_token }).then((r) => r.json());
-  const authedPatch = (path, body) => rest(path, { method: "PATCH", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
-  const authedPost = (path, body) => rest(path, { method: "POST", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
-  const authedDelete = (path) => rest(path, { method: "DELETE", token: session.access_token, prefer: "return=minimal" });
+  const authedGet = (path) => authedRest(path, { token: session.access_token }).then((r) => r.json());
+  const authedPatch = (path, body) => authedRest(path, { method: "PATCH", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
+  const authedPost = (path, body) => authedRest(path, { method: "POST", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
+  const authedDelete = (path) => authedRest(path, { method: "DELETE", token: session.access_token, prefer: "return=minimal" });
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -1999,7 +2087,7 @@ function LoyaltyPanel({ c, truck, session }) {
 
   const redeem = async (phone, reward) => {
     setError("");
-    const res = await fn("redeem-loyalty-reward", { slug: truck.slug, phone, reward_id: reward.id }, session.access_token);
+    const res = await authedFn("redeem-loyalty-reward", { slug: truck.slug, phone, reward_id: reward.id }, session.access_token);
     if (res.error) { setError(res.error); return; }
     setMembers((prev) => prev.map((m) => (m.phone === phone ? { ...m, points_balance: res.new_balance } : m)));
     setRedeemFor(null);
@@ -2090,6 +2178,94 @@ function LoyaltyPanel({ c, truck, session }) {
   );
 }
 
+// Owner-facing colour editor. Previously admin-only, which left real truck
+// owners with no way to adjust their own background/accent/text colours
+// after picking a template at onboarding.
+function ThemeColorsPanel({ c, truck, theme, session, reload }) {
+  const FIELDS = [
+    ["color_bg", "Page background", "The main background behind everything."],
+    ["color_card", "Card surface", "Menu cards and panels sitting on the background."],
+    ["color_gold", "Primary accent", "Headings, prices, Call and Catering buttons."],
+    ["color_red", "Secondary accent", "Add to Order buttons and item tags."],
+    ["color_cream", "Text", "Item names and body headings."],
+    ["color_stone", "Muted text", "Descriptions and secondary details."],
+  ];
+  const seed = () => FIELDS.reduce((acc, [k]) => ({ ...acc, [k]: theme?.[k] || COLORS_FALLBACK[k.replace("color_", "")] || "#000000" }), {});
+  const [draft, setDraft] = useState(seed);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  const save = async () => {
+    setError("");
+    setSaving(true);
+    try {
+      const res = await authedRest(`truck_theme?truck_id=eq.${truck.id}`, {
+        method: "PATCH", token: session.access_token,
+        body: JSON.stringify(draft), prefer: "return=representation",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.message || `Could not save colours (${res.status}).`);
+        return;
+      }
+      setSaved(true);
+      reload?.();
+      setTimeout(() => setSaved(false), 1800);
+    } catch (e) {
+      setError(`Could not save colours — ${e.message}.`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Your Colours</div>
+      <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>Fine-tune any colour on your site. Switching template above replaces all of these at once.</p>
+
+      {/* Live preview so the effect of a colour is obvious before saving */}
+      <div style={{ background: draft.color_bg, border: `1px solid #2A2420`, borderRadius: 10, padding: 12, marginBottom: 14 }}>
+        <div style={{ color: draft.color_gold, fontSize: 10, letterSpacing: 2, fontWeight: 700, marginBottom: 6 }}>PREVIEW</div>
+        <div style={{ background: draft.color_card, borderRadius: 8, padding: 10 }}>
+          <div style={{ color: draft.color_cream, fontWeight: 700, fontSize: 13 }}>Al Pastor Taco</div>
+          <div style={{ color: draft.color_stone, fontSize: 11, margin: "2px 0 8px" }}>Marinated pork, pineapple, cilantro</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: draft.color_gold, fontWeight: 700, fontSize: 14 }}>$3.75</span>
+            <span style={{ marginLeft: "auto", background: draft.color_red, color: "#fff", fontSize: 10, fontWeight: 700, padding: "6px 12px", borderRadius: 8 }}>ADD TO ORDER</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {FIELDS.map(([key, label, help]) => (
+          <div key={key} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <input
+              type="color" value={draft[key]}
+              onChange={(e) => setDraft((s) => ({ ...s, [key]: e.target.value }))}
+              aria-label={label}
+              style={{ width: 40, height: 32, border: "none", background: "none", cursor: "pointer", flexShrink: 0, padding: 0 }}
+            />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600 }}>{label}</div>
+              <div style={{ fontSize: 10, color: c.stone, lineHeight: 1.3 }}>{help}</div>
+            </div>
+            <span className="mono" style={{ fontSize: 10, color: c.stone, flexShrink: 0 }}>{draft[key]}</span>
+          </div>
+        ))}
+      </div>
+
+      {error && <p style={{ color: c.red, fontSize: 11, marginTop: 10 }}>{error}</p>}
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        <button onClick={() => setDraft(seed())} style={{ flex: 1, background: "none", border: `1px solid #2A2420`, color: c.stone, padding: "11px", borderRadius: 10, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Undo changes</button>
+        <button onClick={save} disabled={saving} style={{ flex: 2, background: c.gold, color: "#1A1210", border: "none", padding: "11px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Saving…" : saved ? "✓ Saved — live on your site" : "Save Colours"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function TemplateSwitcher({ c, truck, session, reload }) {
   const [templates, setTemplates] = useState(null);
   const [applying, setApplying] = useState("");
@@ -2098,7 +2274,7 @@ function TemplateSwitcher({ c, truck, session, reload }) {
     rest(`site_templates?select=*&order=sort_order`).then((r) => r.json()).then(setTemplates);
   }, []);
 
-  const authedPatch = (path, body) => rest(path, { method: "PATCH", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
+  const authedPatch = (path, body) => authedRest(path, { method: "PATCH", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
 
   const apply = async (t) => {
     setApplying(t.key);
@@ -2142,7 +2318,7 @@ function KitchenPinPanel({ c, truck, session }) {
     setError("");
     if (!/^\d{4,6}$/.test(pin)) { setError("PIN must be 4-6 digits"); return; }
     setSaving(true);
-    const res = await fn("set-kitchen-pin", { slug: truck.slug, pin }, session.access_token);
+    const res = await authedFn("set-kitchen-pin", { slug: truck.slug, pin }, session.access_token);
     setSaving(false);
     if (res.error) { setError(res.error); return; }
     setSaved(true);
@@ -2201,10 +2377,10 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
   }, [truck.id, session.access_token, loadOrders]);
 
   const authedPatch = (path, body) =>
-    rest(path, { method: "PATCH", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
+    authedRest(path, { method: "PATCH", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
   const authedPost = (path, body) =>
-    rest(path, { method: "POST", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
-  const authedDelete = (path) => rest(path, { method: "DELETE", token: session.access_token, prefer: "return=minimal" });
+    authedRest(path, { method: "POST", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
+  const authedDelete = (path) => authedRest(path, { method: "DELETE", token: session.access_token, prefer: "return=minimal" });
 
   const statusStyle = { new: c.red, preparing: c.gold, ready: c.green, completed: c.stone };
   const statusLabel = { new: "NEW", preparing: "PREPARING", ready: "READY", completed: "COMPLETED" };
@@ -2219,14 +2395,25 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
 
   const saveLocation = async () => {
     setSaveError("");
-    const res = await authedPatch(`truck_location?truck_id=eq.${truck.id}`, { spot, open_until: until, status, lat, lng });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setSaveError(err.message || "Update failed — check you're logged in as admin.");
-      return;
+    try {
+      const res = await authedPatch(`truck_location?truck_id=eq.${truck.id}`, { spot, open_until: until, status, lat, lng });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setSaveError(err.message || "Update failed — check you're logged in as admin.");
+        return;
+      }
+      // A PATCH that matches no row still returns 200 with an empty body,
+      // so an absent truck_location row would otherwise look like a save.
+      const rows = await res.json().catch(() => null);
+      if (Array.isArray(rows) && rows.length === 0) {
+        setSaveError("Nothing was saved — this truck has no location record yet. Contact support.");
+        return;
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (e) {
+      setSaveError(`Update failed — ${e.message}. Check your connection and try again.`);
     }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
   };
 
   const toggleSoldOut = async (item) => {
@@ -2255,31 +2442,37 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
     setNewItemError("");
     if (!newItem.name.trim() || !newItem.price) { setNewItemError("Name and price are required."); return; }
     setAddingItem(true);
-    const res = await authedPost(`menu_items`, {
-      truck_id: truck.id,
-      name: newItem.name.trim(),
-      description: newItem.description.trim(),
-      price: Number(newItem.price),
-      sort_order: menu.length + 1,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setNewItemError(err.message || `Could not add item (${res.status}).`);
+    // finally-guarded: a thrown fetch used to leave addingItem stuck true,
+    // which disabled this button permanently until a page refresh.
+    try {
+      const res = await authedPost(`menu_items`, {
+        truck_id: truck.id,
+        name: newItem.name.trim(),
+        description: newItem.description.trim(),
+        price: Number(newItem.price),
+        sort_order: menu.length + 1,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setNewItemError(err.message || `Could not add item (${res.status}).`);
+        return;
+      }
+      const [created] = await res.json();
+      let finalItem = created;
+      if (newItem.photoFile) {
+        try {
+          const url = await uploadPhoto(newItem.photoFile, `trucks/${truck.id}/menu/${created.id}-${Date.now()}.${newItem.photoFile.name.split(".").pop()}`, session.access_token);
+          await authedPatch(`menu_items?id=eq.${created.id}`, { photo_url: url });
+          finalItem = { ...created, photo_url: url };
+        } catch (e) { setNewItemError(`Item added, but photo upload failed: ${e.message}`); }
+      }
+      setMenu((prev) => [...prev, finalItem]);
+      setNewItem({ name: "", price: "", description: "", photoFile: null, photoPreview: null });
+    } catch (e) {
+      setNewItemError(`Could not add item — ${e.message}. Check your connection and try again.`);
+    } finally {
       setAddingItem(false);
-      return;
     }
-    const [created] = await res.json();
-    let finalItem = created;
-    if (newItem.photoFile) {
-      try {
-        const url = await uploadPhoto(newItem.photoFile, `trucks/${truck.id}/menu/${created.id}-${Date.now()}.${newItem.photoFile.name.split(".").pop()}`, session.access_token);
-        await authedPatch(`menu_items?id=eq.${created.id}`, { photo_url: url });
-        finalItem = { ...created, photo_url: url };
-      } catch (e) { setNewItemError(`Item added, but photo upload failed: ${e.message}`); }
-    }
-    setMenu((prev) => [...prev, finalItem]);
-    setNewItem({ name: "", price: "", description: "", photoFile: null, photoPreview: null });
-    setAddingItem(false);
   };
 
   const deleteMenuItem = async (id) => {
@@ -2427,7 +2620,7 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
             <input value={spot} onChange={(e) => setSpot(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 12, fontSize: 14 }} />
             <label className="mono" style={{ fontSize: 10, color: c.stone }}>OPEN UNTIL</label>
             <input value={until} onChange={(e) => setUntil(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
-            <LocationPinPicker lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} />
+            <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "OPEN" ? c.green : "#2A2420"}`, background: status === "OPEN" ? `${c.green}22` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
               <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "CLOSED" ? c.red : "#2A2420"}`, background: status === "CLOSED" ? `${c.red}22` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
@@ -2559,11 +2752,12 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
         {subTab === "branding" && (
         <>
         <TemplateSwitcher c={c} truck={truck} session={session} reload={reload} />
+        <ThemeColorsPanel c={c} truck={truck} theme={themeRow} session={session} reload={reload} />
         <Reveal delay={170}>
           <div>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>ADMIN — BRANDING</span>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>ADMIN — RAW THEME FIELDS</span>
             <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 4px" }}>Theme Colors</h2>
-            <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>Set once at onboarding. Owners never see this panel.</p>
+            <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>Admin shortcut for the same fields, plus logo upload.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, background: c.card, border: `1px solid #2A2420`, borderRadius: 10, padding: 14 }}>
               {[
                 ["color_gold", "Accent (Gold)"],
@@ -2622,9 +2816,9 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
 
   useEffect(() => { loadOrders(truck.id, session.access_token).then(setOrders); }, [truck.id, session.access_token, loadOrders]);
 
-  const authedPatch = (path, body) => rest(path, { method: "PATCH", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
-  const authedPost = (path, body) => rest(path, { method: "POST", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
-  const authedDelete = (path) => rest(path, { method: "DELETE", token: session.access_token, prefer: "return=minimal" });
+  const authedPatch = (path, body) => authedRest(path, { method: "PATCH", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
+  const authedPost = (path, body) => authedRest(path, { method: "POST", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
+  const authedDelete = (path) => authedRest(path, { method: "DELETE", token: session.access_token, prefer: "return=minimal" });
 
   const updatePrice = async (item, newPrice) => {
     const price = Number(newPrice);
@@ -2637,28 +2831,34 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
     setNewItemError("");
     if (!newItem.name.trim() || !newItem.price) { setNewItemError("Name and price are required."); return; }
     setAddingItem(true);
-    const res = await authedPost(`menu_items`, {
-      truck_id: truck.id, name: newItem.name.trim(), description: newItem.description.trim(),
-      price: Number(newItem.price), sort_order: menu.length + 1,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setNewItemError(err.message || `Could not add item (${res.status}).`);
+    // finally-guarded: a thrown fetch used to leave addingItem stuck true,
+    // which disabled this button permanently until a page refresh.
+    try {
+      const res = await authedPost(`menu_items`, {
+        truck_id: truck.id, name: newItem.name.trim(), description: newItem.description.trim(),
+        price: Number(newItem.price), sort_order: menu.length + 1,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setNewItemError(err.message || `Could not add item (${res.status}).`);
+        return;
+      }
+      const [created] = await res.json();
+      let finalItem = created;
+      if (newItem.photoFile) {
+        try {
+          const url = await uploadPhoto(newItem.photoFile, `trucks/${truck.id}/menu/${created.id}-${Date.now()}.${newItem.photoFile.name.split(".").pop()}`, session.access_token);
+          await authedPatch(`menu_items?id=eq.${created.id}`, { photo_url: url });
+          finalItem = { ...created, photo_url: url };
+        } catch (e) { setNewItemError(`Item added, but photo upload failed: ${e.message}`); }
+      }
+      setMenu((prev) => [...prev, finalItem]);
+      setNewItem({ name: "", price: "", description: "", photoFile: null, photoPreview: null });
+    } catch (e) {
+      setNewItemError(`Could not add item — ${e.message}. Check your connection and try again.`);
+    } finally {
       setAddingItem(false);
-      return;
     }
-    const [created] = await res.json();
-    let finalItem = created;
-    if (newItem.photoFile) {
-      try {
-        const url = await uploadPhoto(newItem.photoFile, `trucks/${truck.id}/menu/${created.id}-${Date.now()}.${newItem.photoFile.name.split(".").pop()}`, session.access_token);
-        await authedPatch(`menu_items?id=eq.${created.id}`, { photo_url: url });
-        finalItem = { ...created, photo_url: url };
-      } catch (e) { setNewItemError(`Item added, but photo upload failed: ${e.message}`); }
-    }
-    setMenu((prev) => [...prev, finalItem]);
-    setNewItem({ name: "", price: "", description: "", photoFile: null, photoPreview: null });
-    setAddingItem(false);
   };
 
   const deleteMenuItem = async (id) => {
@@ -2705,10 +2905,25 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
 
   const saveLocation = async () => {
     setSaveError("");
-    const res = await authedPatch(`truck_location?truck_id=eq.${truck.id}`, { spot, open_until: until, status, lat, lng });
-    if (!res.ok) { setSaveError("Update failed."); return; }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
+    try {
+      const res = await authedPatch(`truck_location?truck_id=eq.${truck.id}`, { spot, open_until: until, status, lat, lng });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setSaveError(err.message || `Update failed (${res.status}) — try signing out and back in.`);
+        return;
+      }
+      // A PATCH that matches no row still returns 200 with an empty body,
+      // so an absent truck_location row would otherwise look like a save.
+      const rows = await res.json().catch(() => null);
+      if (Array.isArray(rows) && rows.length === 0) {
+        setSaveError("Nothing was saved — this truck has no location record yet. Contact support.");
+        return;
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (e) {
+      setSaveError(`Update failed — ${e.message}. Check your connection and try again.`);
+    }
   };
 
   const toggleSoldOut = async (item) => {
@@ -2749,7 +2964,7 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
       </nav>
 
       <div style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid #2A2420`, background: "#0A0807" }}>
-        {[["location", "Location"], ["orders", "Orders"], ["menu", "Menu"], ["faqs", "FAQs"], ["loyalty", "Loyalty"]].map(([key, label]) => (
+        {[["location", "Location"], ["orders", "Orders"], ["menu", "Menu"], ["faqs", "FAQs"], ["loyalty", "Loyalty"], ["branding", "Design"]].map(([key, label]) => (
           <button key={key} onClick={() => setSubTab(key)} style={{ padding: "10px 16px", background: "none", border: "none", borderBottom: subTab === key ? `2px solid ${c.gold}` : "2px solid transparent", color: subTab === key ? c.gold : c.stone, fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
         ))}
       </div>
@@ -2757,6 +2972,18 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
       <div style={{ padding: "20px" }}>
         {subTab === "loyalty" && (
           <LoyaltyPanel c={c} truck={truck} session={session} />
+        )}
+
+        {subTab === "branding" && (
+        <Reveal>
+          <div>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>YOUR DESIGN</span>
+            <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 4px" }}>Look &amp; Feel</h2>
+            <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>Change your whole style in one tap, or fine-tune individual colours below.</p>
+            <TemplateSwitcher c={c} truck={truck} session={session} reload={reload} />
+            <ThemeColorsPanel c={c} truck={truck} theme={theme} session={session} reload={reload} />
+          </div>
+        </Reveal>
         )}
 
         {subTab === "location" && (
@@ -2772,7 +2999,7 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
             <input value={spot} onChange={(e) => setSpot(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 12, fontSize: 14 }} />
             <label className="mono" style={{ fontSize: 10, color: c.stone }}>OPEN UNTIL</label>
             <input value={until} onChange={(e) => setUntil(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
-            <LocationPinPicker lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} />
+            <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "OPEN" ? c.green : "#2A2420"}`, background: status === "OPEN" ? `${c.green}22` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
               <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "CLOSED" ? c.red : "#2A2420"}`, background: status === "CLOSED" ? `${c.red}22` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
@@ -2955,7 +3182,7 @@ function TrucksManager({ c, session, currentTruckId }) {
 
   const deleteTruck = async (slug) => {
     setBusy(slug);
-    const res = await fn("admin-delete-truck", { slug }, session.access_token);
+    const res = await authedFn("admin-delete-truck", { slug }, session.access_token);
     setBusy("");
     setConfirmDelete(null);
     if (res.error) { alert(res.error); return; }
