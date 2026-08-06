@@ -3044,7 +3044,7 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
       </nav>
 
       <div style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid #2A2420`, background: "#0A0807" }}>
-        {[["location", "My Truck"], ["menu", "Menu"], ["branding", "Design"], ["orders", "Orders"], ["loyalty", "Rewards"], ["faqs", "Questions"]].map(([key, label]) => (
+        {[["location", "Profile"], ["menu", "Menu"], ["branding", "Design"], ["orders", "Orders"], ["loyalty", "Rewards"], ["faqs", "Questions"]].map(([key, label]) => (
           <button key={key} onClick={() => setSubTab(key)} style={{ padding: "10px 16px", background: "none", border: "none", borderBottom: subTab === key ? `2px solid ${c.gold}` : "2px solid transparent", color: subTab === key ? c.gold : c.stone, fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
         ))}
       </div>
