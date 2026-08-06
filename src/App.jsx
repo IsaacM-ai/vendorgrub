@@ -2347,6 +2347,10 @@ function ThemeColorsPanel({ c, truck, theme, session, reload }) {
     ["color_card", "Card surface", "Menu cards and panels sitting on the background."],
     ["color_gold", "Primary accent", "Headings, prices, Call and Catering buttons."],
     ["color_red", "Secondary accent", "Add to Order buttons and item tags."],
+    // Only templates built around a glow/motion look (currently Neon Pulse)
+    // use a 3rd accent — showing it for everyone else would be a control
+    // with no visible effect, which is exactly the clutter we're avoiding.
+    ...(theme?.color_accent2 ? [["color_accent2", "Glow accent", "The second glow color behind your hero and menu cards."]] : []),
     ["color_cream", "Text", "Item names and body headings."],
     ["color_stone", "Muted text", "Descriptions and secondary details."],
   ];
@@ -2449,6 +2453,7 @@ function TemplateSwitcher({ c, truck, theme, session, reload }) {
       const res = await authedPatch(`truck_theme?truck_id=eq.${truck.id}`, {
         color_bg: t.color_bg, color_card: t.color_card, color_gold: t.color_gold,
         color_red: t.color_red, color_cream: t.color_cream, color_stone: t.color_stone,
+        color_accent2: t.color_accent2 || null,
         mode: t.mode, menu_layout: t.menu_layout, heading_font: t.heading_font, decoration: t.decoration,
       });
       if (!res.ok) {
