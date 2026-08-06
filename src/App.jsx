@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
-import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, Image as ImageIcon } from "lucide-react";
+import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, Palette, Image as ImageIcon } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -1908,7 +1908,7 @@ function OwnerLogin() {
   );
 }
 
-function TruckProfilePanel({ c, truck, theme, session, reload }) {
+function TruckProfilePanel({ c, truck, theme, session, reload, bare }) {
   const [name, setName] = useState(truck.name);
   const [tagline, setTagline] = useState(truck.tagline || "");
   const [subline, setSubline] = useState(truck.subline || "");
@@ -1945,9 +1945,13 @@ function TruckProfilePanel({ c, truck, theme, session, reload }) {
     save(null, key);
   };
 
+  const shellStyle = bare
+    ? {}
+    : { background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 };
+
   return (
-    <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Truck Profile</div>
+    <div style={shellStyle}>
+      {!bare && <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Truck Profile</div>}
 
       <label style={{ height: 110, borderRadius: 10, marginBottom: 14, cursor: "pointer", overflow: "hidden", position: "relative", background: heroPreview ? `url(${heroPreview}) center/cover` : c.bg, border: `1px dashed #3A322C`, display: "flex", alignItems: "center", justifyContent: "center" }}>
         {!heroPreview && <div style={{ textAlign: "center" }}><ImageIcon size={20} color={c.stone} /><div style={{ fontSize: 11, color: c.stone, marginTop: 4 }}>Hero background photo</div></div>}
@@ -1983,7 +1987,7 @@ function TruckProfilePanel({ c, truck, theme, session, reload }) {
   );
 }
 
-function DeliverySettingsPanel({ c, truck, session }) {
+function DeliverySettingsPanel({ c, truck, session, bare }) {
   const [fee, setFee] = useState(truck.delivery_fee ?? 0);
   const [radius, setRadius] = useState(truck.delivery_radius || "");
   const [saved, setSaved] = useState(false);
@@ -2001,8 +2005,8 @@ function DeliverySettingsPanel({ c, truck, session }) {
   };
 
   return (
-    <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Delivery Settings</div>
+    <div style={bare ? {} : { background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+      {!bare && <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Delivery Settings</div>}
       <p style={{ fontSize: 11, color: c.stone, marginBottom: 10 }}>Controls the fee and radius customers see when they choose Delivery at checkout.</p>
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
         <div style={{ flex: 1 }}>
@@ -2178,6 +2182,73 @@ function LoyaltyPanel({ c, truck, session }) {
   );
 }
 
+// Collapsed-by-default settings section. The owner dashboard is used by
+// people setting up a food truck, not operators of a CMS — showing every
+// control at once reads as work. Each section stays shut until asked for,
+// with a one-line summary so its current state is still visible closed.
+function Collapsible({ c, title, summary, icon, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, marginBottom: 12, overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", color: c.cream, padding: 16, cursor: "pointer", textAlign: "left" }}
+      >
+        {icon && <span style={{ flexShrink: 0, display: "flex", color: c.gold }}>{icon}</span>}
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", fontWeight: 700, fontSize: 13.5 }}>{title}</span>
+          {summary && <span style={{ display: "block", fontSize: 11, color: c.stone, marginTop: 2 }}>{summary}</span>}
+        </span>
+        <ChevronDown size={17} color={c.stone} style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.18s ease" }} />
+      </button>
+      {open && <div style={{ padding: "0 16px 16px" }}>{children}</div>}
+    </div>
+  );
+}
+
+// Turns "here are all your settings" into "here is your next step". Hides
+// itself once the truck is actually ready, so it guides setup without
+// becoming permanent clutter.
+function SetupChecklist({ c, truck, theme, menu, location, onGo }) {
+  const steps = [
+    { label: "Add your first menu item", done: (menu?.length || 0) > 0, tab: "menu" },
+    { label: "Upload a photo for your header", done: !!theme?.hero_photo_url, tab: "location" },
+    { label: "Tell customers your story", done: !!truck?.about_text, tab: "location" },
+    { label: "Pin where you park", done: location?.lat != null && location?.lng != null, tab: "location" },
+    { label: "Switch yourself to Open", done: location?.status === "OPEN", tab: "location" },
+  ];
+  const done = steps.filter((s) => s.done).length;
+  if (done === steps.length) return null;
+
+  const next = steps.find((s) => !s.done);
+  return (
+    <div style={{ background: c.card, border: `1px solid ${c.gold}55`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{ fontWeight: 700, fontSize: 13.5 }}>Finish setting up</span>
+        <span className="mono" style={{ fontSize: 11, color: c.stone }}>{done} of {steps.length}</span>
+      </div>
+      <div style={{ background: "#2A2420", borderRadius: 999, height: 5, overflow: "hidden", marginBottom: 12 }}>
+        <div style={{ background: c.gold, height: "100%", width: `${(done / steps.length) * 100}%`, transition: "width 0.3s ease" }} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        {steps.map((s) => (
+          <button
+            key={s.label}
+            onClick={() => onGo(s.tab)}
+            style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", color: s.done ? c.stone : c.cream }}
+          >
+            {s.done
+              ? <CheckCircle2 size={15} color={c.green} style={{ flexShrink: 0 }} />
+              : <Circle size={15} color={s === next ? c.gold : "#3A322C"} style={{ flexShrink: 0 }} />}
+            <span style={{ fontSize: 12.5, textDecoration: s.done ? "line-through" : "none", fontWeight: s === next ? 600 : 400 }}>{s.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Owner-facing colour editor. Previously admin-only, which left real truck
 // owners with no way to adjust their own background/accent/text colours
 // after picking a template at onboarding.
@@ -2220,10 +2291,7 @@ function ThemeColorsPanel({ c, truck, theme, session, reload }) {
   };
 
   return (
-    <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Your Colours</div>
-      <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>Fine-tune any colour on your site. Switching template above replaces all of these at once.</p>
-
+    <div>
       {/* Live preview so the effect of a colour is obvious before saving */}
       <div style={{ background: draft.color_bg, border: `1px solid #2A2420`, borderRadius: 10, padding: 12, marginBottom: 14 }}>
         <div style={{ color: draft.color_gold, fontSize: 10, letterSpacing: 2, fontWeight: 700, marginBottom: 6 }}>PREVIEW</div>
@@ -2266,7 +2334,7 @@ function ThemeColorsPanel({ c, truck, theme, session, reload }) {
   );
 }
 
-function TemplateSwitcher({ c, truck, session, reload }) {
+function TemplateSwitcher({ c, truck, theme, session, reload }) {
   const [templates, setTemplates] = useState(null);
   const [applying, setApplying] = useState("");
 
@@ -2287,20 +2355,32 @@ function TemplateSwitcher({ c, truck, session, reload }) {
     reload?.();
   };
 
+  // Same layout thumbnails the owner chose from at signup, so switching
+  // later is recognisably the same decision rather than a new vocabulary.
+  const isActive = (t) => theme && t.color_bg === theme.color_bg && t.color_gold === theme.color_gold;
+
   return (
-    <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Switch Template</div>
-      <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>Applies a whole new visual style — colors, mode, and menu layout — in one tap. You can still fine-tune individual colors below afterward.</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div>
+      <p style={{ fontSize: 11.5, color: c.stone, marginBottom: 12, lineHeight: 1.5 }}>Pick a new look. This replaces your colours, layout and lettering in one tap — you can still fine-tune afterwards.</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {!templates && <p style={{ fontSize: 12, color: c.stone }}>Loading designs…</p>}
         {templates?.map((t) => (
-          <button key={t.key} onClick={() => apply(t)} disabled={applying === t.key} style={{ textAlign: "left", background: t.color_bg, border: "2px solid #2A2420", borderRadius: 10, padding: 12, cursor: "pointer" }}>
-            <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-              {[t.color_gold, t.color_red, t.color_cream, t.color_stone].map((clr, i) => (
-                <span key={i} style={{ width: 16, height: 16, borderRadius: "50%", background: clr, display: "inline-block", border: "1px solid rgba(0,0,0,0.15)" }} />
-              ))}
+          <button
+            key={t.key}
+            onClick={() => apply(t)}
+            disabled={!!applying}
+            style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 12, alignItems: "center", textAlign: "left", background: isActive(t) ? `${c.gold}18` : "transparent", border: `2px solid ${isActive(t) ? c.gold : "#2A2420"}`, borderRadius: 12, padding: 10, cursor: applying ? "wait" : "pointer" }}
+          >
+            <div style={{ width: 72, height: 72, overflow: "hidden", borderRadius: 9, flexShrink: 0 }}>
+              <div style={{ transform: "scale(0.857)", transformOrigin: "top left" }}><TemplateThumb t={t} /></div>
             </div>
-            <div style={{ color: t.color_cream, fontWeight: 700, fontSize: 13 }}>{applying === t.key ? "Applying…" : t.name}</div>
-            <div style={{ color: t.color_stone, fontSize: 10, marginTop: 2 }}>{t.description}</div>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: "block", color: c.cream, fontWeight: 700, fontSize: 13 }}>
+                {applying === t.key ? "Applying…" : t.name}
+                {isActive(t) && !applying && <span style={{ color: c.gold, fontSize: 10, fontWeight: 700, marginLeft: 6 }}>· IN USE</span>}
+              </span>
+              <span style={{ display: "block", color: c.stone, fontSize: 11, marginTop: 2, lineHeight: 1.35 }}>{t.description}</span>
+            </span>
           </button>
         ))}
       </div>
@@ -2308,7 +2388,7 @@ function TemplateSwitcher({ c, truck, session, reload }) {
   );
 }
 
-function KitchenPinPanel({ c, truck, session }) {
+function KitchenPinPanel({ c, truck, session, bare }) {
   const [pin, setPin] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -2326,8 +2406,8 @@ function KitchenPinPanel({ c, truck, session }) {
   };
 
   return (
-    <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Kitchen Access PIN</div>
+    <div style={bare ? {} : { background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+      {!bare && <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Kitchen Access PIN</div>}
       <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>
         Give this PIN to whoever's cooking. They enter it at <span className="mono">/{truck.slug}/kitchen</span> to see incoming order tickets — no login needed.
       </p>
@@ -2964,7 +3044,7 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
       </nav>
 
       <div style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid #2A2420`, background: "#0A0807" }}>
-        {[["location", "Location"], ["orders", "Orders"], ["menu", "Menu"], ["faqs", "FAQs"], ["loyalty", "Loyalty"], ["branding", "Design"]].map(([key, label]) => (
+        {[["location", "My Truck"], ["menu", "Menu"], ["branding", "Design"], ["orders", "Orders"], ["loyalty", "Rewards"], ["faqs", "Questions"]].map(([key, label]) => (
           <button key={key} onClick={() => setSubTab(key)} style={{ padding: "10px 16px", background: "none", border: "none", borderBottom: subTab === key ? `2px solid ${c.gold}` : "2px solid transparent", color: subTab === key ? c.gold : c.stone, fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
         ))}
       </div>
@@ -2977,33 +3057,46 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
         {subTab === "branding" && (
         <Reveal>
           <div>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>YOUR DESIGN</span>
-            <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 4px" }}>Look &amp; Feel</h2>
-            <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>Change your whole style in one tap, or fine-tune individual colours below.</p>
-            <TemplateSwitcher c={c} truck={truck} session={session} reload={reload} />
-            <ThemeColorsPanel c={c} truck={truck} theme={theme} session={session} reload={reload} />
+            <p style={{ fontSize: 12.5, color: c.stone, marginBottom: 14, lineHeight: 1.5 }}>Most trucks just pick a style and leave it. Open a section below only if you want to change something.</p>
+            <Collapsible c={c} icon={<LayoutDashboard size={17} />} title="Change your style" summary="Colours, layout and lettering in one tap" defaultOpen>
+              <TemplateSwitcher c={c} truck={truck} theme={theme} session={session} reload={reload} />
+            </Collapsible>
+            <Collapsible c={c} icon={<Palette size={17} />} title="Fine-tune colours" summary="Optional — set your own background, accent and text colours">
+              <ThemeColorsPanel c={c} truck={truck} theme={theme} session={session} reload={reload} />
+            </Collapsible>
           </div>
         </Reveal>
         )}
 
         {subTab === "location" && (
         <>
-        <TruckProfilePanel c={c} truck={truck} theme={theme} session={session} reload={reload} />
+        <SetupChecklist c={c} truck={truck} theme={theme} menu={menu} location={{ ...initialLocation, lat, lng, status }} onGo={setSubTab} />
+
+        {/* Today's spot sits first and open: it's the one thing an owner
+            comes back to change every single shift. */}
         <Reveal>
-          <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-              <MapPin size={16} color={c.gold} />
-              <span style={{ fontWeight: 700, fontSize: 14 }}>Today's Location</span>
+          <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 16, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <MapPin size={17} color={c.gold} />
+              <span style={{ fontWeight: 700, fontSize: 13.5 }}>Where you are today</span>
             </div>
-            <label className="mono" style={{ fontSize: 10, color: c.stone }}>WHERE ARE WE PARKED</label>
-            <input value={spot} onChange={(e) => setSpot(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 12, fontSize: 14 }} />
-            <label className="mono" style={{ fontSize: 10, color: c.stone }}>OPEN UNTIL</label>
-            <input value={until} onChange={(e) => setUntil(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
+            <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>Update this whenever you move. Customers see it at the top of your site straight away.</p>
+
+            <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Where are you parked?</label>
+            <input value={spot} onChange={(e) => setSpot(e.target.value)} placeholder="e.g. Cole Park, by the pier" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 12, fontSize: 14 }} />
+
+            <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Serving until</label>
+            <input value={until} onChange={(e) => setUntil(e.target.value)} placeholder="e.g. 8PM" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
+
+            <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Drop a pin so customers can find you</label>
             <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
+
+            <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Are you serving right now?</label>
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "OPEN" ? c.green : "#2A2420"}`, background: status === "OPEN" ? `${c.green}22` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
               <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "CLOSED" ? c.red : "#2A2420"}`, background: status === "CLOSED" ? `${c.red}22` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
             </div>
+
             <button onClick={saveLocation} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
               {saved ? "✓ Updated — live on site now" : "Update Location"}
             </button>
@@ -3011,7 +3104,17 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
           </div>
         </Reveal>
 
-        <KitchenPinPanel c={c} truck={truck} session={session} />
+        <Collapsible
+          c={c} icon={<Truck size={17} />}
+          title="Your truck details"
+          summary={truck.about_text ? "Name, photo, lettering and your story" : "Name, photo, lettering — add your story"}
+        >
+          <TruckProfilePanel bare c={c} truck={truck} theme={theme} session={session} reload={reload} />
+        </Collapsible>
+
+        <Collapsible c={c} icon={<Store size={17} />} title="Kitchen screen PIN" summary="For staff taking orders on a second screen">
+          <KitchenPinPanel bare c={c} truck={truck} session={session} />
+        </Collapsible>
         </>
         )}
 
@@ -3076,11 +3179,11 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
         {subTab === "menu" && (
         <Reveal delay={110}>
           <div style={{ marginBottom: 18 }}>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>YOUR MENU</span>
-            <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 4px" }}>Menu</h2>
-            <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>Add items with a photo, price, and description — this list is a live preview of what customers see.</p>
+            <p style={{ fontSize: 12.5, color: c.stone, marginBottom: 14, lineHeight: 1.5 }}>Everything you add here shows up on your site straight away. A photo and a short description sell an item far better than a name on its own.</p>
 
-            <DeliverySettingsPanel c={c} truck={truck} session={session} />
+            <Collapsible c={c} icon={<Truck size={17} />} title="Delivery settings" summary="Optional — set a delivery fee and how far you'll go">
+              <DeliverySettingsPanel bare c={c} truck={truck} session={session} />
+            </Collapsible>
 
             <div style={{ background: c.card, border: `1px dashed #3A322C`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
               <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, height: 100, border: `1px dashed #3A322C`, borderRadius: 10, marginBottom: 10, cursor: "pointer", overflow: "hidden", background: newItem.photoPreview ? `url(${newItem.photoPreview}) center/cover` : "transparent" }}>
