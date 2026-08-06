@@ -1908,7 +1908,37 @@ function OwnerLogin() {
   );
 }
 
-function TruckProfilePanel({ c, truck, theme, session, reload, bare }) {
+// Renders the real CustomerSite — not a lookalike — inside a device frame,
+// with unsaved Truck Profile edits layered over the real saved data. It
+// can never visually drift from the actual site because it is the actual
+// site. demoMode keeps taps (including "Add to Order") safe: real cart and
+// checkout UI work, nothing is ever actually submitted.
+function LivePreviewFrame({ truck, theme, location, menu, faqs, draft }) {
+  const previewTruck = draft ? { ...truck, name: draft.name, tagline: draft.tagline, subline: draft.subline, phone: draft.phone } : truck;
+  const previewTheme = draft ? { ...theme, font_key: draft.fontKey, hero_photo_url: draft.heroPreview } : theme;
+  const previewColors = buildColors(previewTheme);
+  const previewData = { truck: previewTruck, theme: previewTheme, location, menu, faqs };
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 2px" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#8B8B8B", letterSpacing: 1 }}>
+          <span className="hud-dot" style={{ width: 6, height: 6, borderRadius: "50%", background: "#4CA466", display: "inline-block" }} />
+          LIVE PREVIEW
+        </span>
+        <a href={`/${truck.slug}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#2FBFD4", textDecoration: "none", fontWeight: 600 }}>View full size ↗</a>
+      </div>
+      <div style={{ border: "3px solid #1C1C1C", borderRadius: 24, overflow: "hidden", height: 520, background: "#000" }}>
+        <style>{`@keyframes livePreviewPulse { 0%,100%{opacity:1} 50%{opacity:0.35} } .hud-dot { animation: livePreviewPulse 1.6s ease-in-out infinite; }`}</style>
+        <div style={{ height: "100%", overflowY: "auto" }}>
+          <CustomerSite c={previewColors} data={previewData} demoMode />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TruckProfilePanel({ c, truck, theme, session, reload, bare, onDraftChange }) {
   const [name, setName] = useState(truck.name);
   const [tagline, setTagline] = useState(truck.tagline || "");
   const [subline, setSubline] = useState(truck.subline || "");
@@ -1919,6 +1949,13 @@ function TruckProfilePanel({ c, truck, theme, session, reload, bare }) {
   const [uploading, setUploading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+
+  // Reports every keystroke upward so a live preview can render the real
+  // storefront with unsaved edits layered on — this panel still owns its
+  // own inputs, it's just also broadcasting them.
+  useEffect(() => {
+    onDraftChange?.({ name, tagline, subline, phone, fontKey, heroPreview });
+  }, [name, tagline, subline, phone, fontKey, heroPreview]);
 
   const save = async (heroFile, overrideFontKey) => {
     setError("");
@@ -2186,12 +2223,16 @@ function LoyaltyPanel({ c, truck, session }) {
 // people setting up a food truck, not operators of a CMS — showing every
 // control at once reads as work. Each section stays shut until asked for,
 // with a one-line summary so its current state is still visible closed.
-function Collapsible({ c, title, summary, icon, defaultOpen = false, children }) {
-  const [open, setOpen] = useState(defaultOpen);
+function Collapsible({ c, title, summary, icon, defaultOpen = false, open: controlledOpen, onToggle, children }) {
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const toggle = () => (isControlled ? onToggle?.(!open) : setInternalOpen((o) => !o));
+
   return (
     <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, marginBottom: 12, overflow: "hidden" }}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         aria-expanded={open}
         style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", color: c.cream, padding: 16, cursor: "pointer", textAlign: "left" }}
       >
@@ -2911,6 +2952,8 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
   const [lng, setLng] = useState(initialLocation?.lng ?? null);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileDraft, setProfileDraft] = useState(null);
   const [menu, setMenu] = useState(initialMenu);
   const [faqs, setFaqs] = useState(initialFaqs);
   const [gallery, setGallery] = useState(initialGallery);
@@ -3132,12 +3175,20 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
           </div>
         </Reveal>
 
+        {profileOpen && (
+          <LivePreviewFrame
+            truck={truck} theme={theme} draft={profileDraft}
+            location={{ ...initialLocation, spot, open_until: until, status, lat, lng }}
+            menu={menu} faqs={faqs}
+          />
+        )}
         <Collapsible
           c={c} icon={<Truck size={17} />}
           title="Your truck details"
           summary={truck.about_text ? "Name, photo, lettering and your story" : "Name, photo, lettering — add your story"}
+          open={profileOpen} onToggle={setProfileOpen}
         >
-          <TruckProfilePanel bare c={c} truck={truck} theme={theme} session={session} reload={reload} />
+          <TruckProfilePanel bare c={c} truck={truck} theme={theme} session={session} reload={reload} onDraftChange={setProfileDraft} />
         </Collapsible>
 
         <Collapsible c={c} icon={<Store size={17} />} title="Kitchen screen PIN" summary="For staff taking orders on a second screen">
