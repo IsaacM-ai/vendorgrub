@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
-import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, Palette, Image as ImageIcon } from "lucide-react";
+import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, ArrowRight, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Palette, Image as ImageIcon } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -1178,6 +1178,8 @@ function CustomerSite({ c, data, demoMode }) {
   const [quickView, setQuickView] = useState(null);
   const [modalQty, setModalQty] = useState(1);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [fullMenuOpen, setFullMenuOpen] = useState(false);
+  const featuredScrollRef = useRef(null);
   const [fulfillment, setFulfillment] = useState("pickup");
   const [address, setAddress] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -1187,6 +1189,19 @@ function CustomerSite({ c, data, demoMode }) {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { success, order_id, total } | { error }
   const [confirmedItems, setConfirmedItems] = useState([]);
+
+  // Any of these fixed-overlay modals being open should stop the page
+  // behind it from scrolling — without this, scrolling inside the modal
+  // on mobile chains through to the page once the modal content hits its
+  // own scroll boundary, dragging the page (and whatever's below, like the
+  // location map) up behind the still-open modal.
+  const modalOpen = !!quickView || checkoutOpen || !!result || fullMenuOpen;
+  useEffect(() => {
+    if (!modalOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prevOverflow; };
+  }, [modalOpen]);
 
   const addToOrder = (item, qty = 1) => setCart((prev) => ({ ...prev, [item.id]: (prev[item.id] || 0) + qty }));
 
@@ -1239,6 +1254,18 @@ function CustomerSite({ c, data, demoMode }) {
   // glass treatment rather than a flat card + simple pattern — gated on a
   // real theme field rather than the template key so it stays data-driven.
   const isNeon = data.theme?.decoration === "circuit" && !!c.accent2;
+
+  // Sweetheart's Featured Menu reads as a paged carousel (arrows + a Full
+  // Menu modal) instead of the plain 2-column grid every other "grid"
+  // template still uses — gated on its own decoration field, same pattern
+  // as isNeon, so it's data-driven rather than a hardcoded template check.
+  const isSweetheart = data.theme?.decoration === "dots";
+  const arrowBtnStyle = (side) => ({
+    position: "absolute", top: "40%", [side]: 6, transform: "translateY(-50%)",
+    width: 34, height: 34, borderRadius: "50%", border: "none", cursor: "pointer",
+    background: c.card, color: c.gold, boxShadow: "0 2px 10px rgba(0,0,0,0.25)",
+    display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2,
+  });
 
   // Shared by the Featured Menu grid/scroll and the curated Popular Items /
   // Special Deals shelves, so a menu-item card looks and behaves identically
@@ -1374,8 +1401,8 @@ function CustomerSite({ c, data, demoMode }) {
               className={isNeon ? "neon-gradient-text" : undefined}
               style={{
                 fontFamily: (NAME_FONTS[data.theme?.font_key]?.family) || NAME_FONTS.kaushan.family,
-                fontSize: "clamp(40px, 12vw, 56px)", lineHeight: 1, margin: "8px 0 12px",
-                ...(isNeon ? { backgroundImage: `linear-gradient(90deg, ${c.cream}, ${c.gold}, ${c.accent2}, ${c.cream})` } : { color: c.cream }),
+                fontSize: "clamp(40px, 12vw, 56px)", lineHeight: isNeon ? 1.08 : 1, margin: "8px 0 12px",
+                ...(isNeon ? { textAlign: "center", backgroundImage: `linear-gradient(90deg, ${c.cream}, ${c.gold}, ${c.accent2}, ${c.cream})` } : { color: c.cream }),
               }}
             >
               {truck.name}
@@ -1387,12 +1414,31 @@ function CustomerSite({ c, data, demoMode }) {
 
       <section id="menu" style={{ padding: "8px 0 32px" }}>
         <Reveal>
-          <div style={{ padding: "0 20px", marginBottom: 16 }}>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>SOMETHING FOR EVERYONE</span>
-            <h2 className="display" style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>Featured Menu</h2>
+          <div style={{ padding: "0 20px", marginBottom: 16, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>SOMETHING FOR EVERYONE</span>
+              <h2 className="display" style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>Featured Menu</h2>
+            </div>
+            {isSweetheart && menu.length > 0 && (
+              <button onClick={() => setFullMenuOpen(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1.5px solid ${c.gold}`, color: c.gold, borderRadius: 999, padding: "8px 14px", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, marginTop: 2 }}>
+                VIEW FULL MENU <ArrowRight size={13} />
+              </button>
+            )}
           </div>
         </Reveal>
-        {data.theme?.menu_layout === "grid" ? (
+        {isSweetheart ? (
+          <div style={{ position: "relative" }}>
+            <div ref={featuredScrollRef} className="scrollx" style={{ display: "flex", gap: 14, overflowX: "auto", padding: "0 20px 8px", scrollSnapType: "x mandatory" }}>
+              {menu.map((item, i) => renderCard(item, i, true))}
+            </div>
+            {menu.length > 1 && (
+              <>
+                <button onClick={() => featuredScrollRef.current?.scrollBy({ left: -264, behavior: "smooth" })} aria-label="Previous items" style={arrowBtnStyle("left")}><ChevronLeft size={18} /></button>
+                <button onClick={() => featuredScrollRef.current?.scrollBy({ left: 264, behavior: "smooth" })} aria-label="Next items" style={arrowBtnStyle("right")}><ChevronRight size={18} /></button>
+              </>
+            )}
+          </div>
+        ) : data.theme?.menu_layout === "grid" ? (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "0 20px 8px" }}>
             {menu.map((item, i) => renderCard(item, i))}
           </div>
@@ -1647,6 +1693,29 @@ function CustomerSite({ c, data, demoMode }) {
               >
                 <ShoppingCart size={16} /> {quickView.sold_out ? "SOLD OUT" : `Add ${modalQty} to Order — $${(Number(quickView.price) * modalQty).toFixed(2)}`}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fullMenuOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 70, display: "flex", alignItems: "flex-end" }} onClick={() => setFullMenuOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: c.card, borderRadius: "20px 20px 0 0", width: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px 14px", borderBottom: `1px solid ${c.border}`, flexShrink: 0 }}>
+              <h2 className="display" style={{ fontSize: 19, fontWeight: 700 }}>Full Menu</h2>
+              <button onClick={() => setFullMenuOpen(false)} style={{ background: "rgba(120,120,120,0.15)", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={16} color={c.stone} /></button>
+            </div>
+            <div style={{ overflowY: "auto", padding: "4px 20px 24px" }}>
+              {menu.map((item) => (
+                <div key={item.id} onClick={() => { setFullMenuOpen(false); setQuickView(item); setModalQty(1); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 0", borderBottom: `1px solid ${c.border}`, cursor: "pointer", opacity: item.sold_out ? 0.5 : 1 }}>
+                  <div className="checker" style={{ width: 56, height: 56, borderRadius: 10, flexShrink: 0, backgroundImage: item.photo_url ? `url(${item.photo_url})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: c.cream, marginBottom: 2 }}>{item.name}</div>
+                    <div style={{ fontSize: 12, color: c.stone, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.description}</div>
+                  </div>
+                  <span className="mono" style={{ color: c.gold, fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{item.sold_out ? "SOLD OUT" : `$${Number(item.price).toFixed(2)}`}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
