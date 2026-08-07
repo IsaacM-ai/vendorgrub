@@ -165,8 +165,9 @@ const NAME_FONTS = {
   anton: { label: "Anton", family: "'Anton', sans-serif" },
   bebas: { label: "Bebas Neue", family: "'Bebas Neue', sans-serif" },
   marker: { label: "Permanent Marker", family: "'Permanent Marker', cursive" },
+  elegance: { label: "Alex Brush", family: "'Alex Brush', cursive" },
 };
-const NAME_FONTS_GOOGLE_QUERY = "family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker";
+const NAME_FONTS_GOOGLE_QUERY = "family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=Alex+Brush";
 
 // Section-heading font — template-level (not owner-chosen like NAME_FONTS),
 // so "Featured Menu", "Popular Items", etc. carry each template's identity
@@ -176,6 +177,7 @@ const HEADING_FONTS = {
   quicksand: { label: "Quicksand", family: "'Quicksand', sans-serif" },
   fredoka: { label: "Fredoka", family: "'Fredoka', sans-serif" },
   orbitron: { label: "Orbitron", family: "'Orbitron', sans-serif" },
+  playfair: { label: "Playfair Display", family: "'Playfair Display', serif" },
 };
 
 // Template-level decorative pattern, used for the menu-photo placeholder and
@@ -186,6 +188,7 @@ function decorationPattern(key, colorA, colorB) {
   if (key === "dots") return { backgroundImage: `radial-gradient(${colorA} 28%, transparent 30%)`, backgroundSize: "10px 10px" };
   if (key === "scallop") return { backgroundImage: `linear-gradient(135deg, ${colorA} 25%, transparent 25.5%), linear-gradient(225deg, ${colorA} 25%, transparent 25.5%)`, backgroundSize: "14px 14px" };
   if (key === "circuit") return { backgroundImage: `linear-gradient(${colorA}55 1px, transparent 1px), linear-gradient(90deg, ${colorA}55 1px, transparent 1px)`, backgroundSize: "18px 18px" };
+  if (key === "floral") return { backgroundImage: `radial-gradient(${colorA}40 1.5px, transparent 2px)`, backgroundSize: "13px 13px" };
   return { backgroundImage: `repeating-conic-gradient(${colorA} 0% 25%, ${colorB} 0% 50%)`, backgroundSize: "16px 16px" }; // "checker" default
 }
 
@@ -196,6 +199,7 @@ function heroWashCss(key, accent, accent2) {
   if (key === "dots") return `radial-gradient(${accent}33 2px, transparent 2.5px) 0 0/22px 22px, radial-gradient(${accent}1A 2px, transparent 2.5px) 11px 11px/22px 22px`;
   if (key === "scallop") return `linear-gradient(115deg, ${accent}29 0%, transparent 45%), linear-gradient(245deg, ${accent}1F 0%, transparent 40%)`;
   if (key === "circuit") return `radial-gradient(circle at 20% 15%, ${accent}3D, transparent 55%), radial-gradient(circle at 85% 75%, ${(accent2 || accent)}3D, transparent 55%)`;
+  if (key === "floral") return `radial-gradient(circle at 50% 35%, ${accent}26, transparent 60%)`;
   return `radial-gradient(circle at 30% 20%, ${accent}22, transparent 60%)`; // "checker" default — existing look
 }
 
@@ -303,6 +307,35 @@ function CornerBrackets({ color, size = 22 }) {
   );
 }
 
+// Boutique-patisserie corner flourish for Atelier — one small SVG vine+petal
+// mirrored into all four corners via CSS transforms, same single-asset
+// approach as CornerBrackets, just a curve instead of an L-shape.
+function FloralCorners({ color }) {
+  const Flourish = () => (
+    <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
+      <path d="M4 4 C 4 20, 20 4, 36 4" stroke={color} strokeWidth="1" opacity="0.55" />
+      <circle cx="4" cy="4" r="2" fill={color} opacity="0.7" />
+      <circle cx="15" cy="9" r="1.3" fill={color} opacity="0.5" />
+      <circle cx="24" cy="5.5" r="1" fill={color} opacity="0.4" />
+    </svg>
+  );
+  const corner = (pos) => ({
+    position: "absolute", lineHeight: 0,
+    ...(pos === "tl" && { top: 10, left: 10 }),
+    ...(pos === "tr" && { top: 10, right: 10, transform: "scaleX(-1)" }),
+    ...(pos === "bl" && { bottom: 10, left: 10, transform: "scaleY(-1)" }),
+    ...(pos === "br" && { bottom: 10, right: 10, transform: "scale(-1,-1)" }),
+  });
+  return (
+    <>
+      <span style={corner("tl")}><Flourish /></span>
+      <span style={corner("tr")}><Flourish /></span>
+      <span style={corner("bl")}><Flourish /></span>
+      <span style={corner("br")}><Flourish /></span>
+    </>
+  );
+}
+
 // Miniature, non-interactive replica of the real CustomerSite layout (nav,
 // live-status strip, hero, menu cards) drawn as proportioned bars from a
 // template row's own mode/menu_layout/colors — so the onboarding picker
@@ -395,6 +428,55 @@ function PromoTagPicker({ c, item, onSetTag, onSetNote }) {
   );
 }
 
+// Assigns a menu item to one of the truck's 5 fixed categories — only shown
+// for templates with category browsing (currently Atelier only).
+function CategoryPicker({ c, item, categories, onSetCategory }) {
+  return (
+    <select
+      value={item.category_id || ""}
+      onChange={(e) => onSetCategory(item, e.target.value || null)}
+      style={{ width: "100%", background: c.bg, border: "1px solid #2A2420", borderRadius: 6, padding: "6px 8px", color: c.cream, fontSize: 11, marginTop: 8 }}
+    >
+      <option value="">No category</option>
+      {categories.map((cat) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+    </select>
+  );
+}
+
+// Lets the owner rename each of the 5 fixed categories and add a short
+// caption shown to customers browsing that category — the categories
+// themselves can't be added to or removed, only relabeled.
+function MenuCategoriesPanel({ c, categories, onSave }) {
+  const [drafts, setDrafts] = useState(() => Object.fromEntries(categories.map((cat) => [cat.id, { name: cat.name, caption: cat.caption || "" }])));
+  const [savedId, setSavedId] = useState("");
+  return (
+    <div style={{ background: c.card, border: "1px solid #2A2420", borderRadius: 12, padding: 14, marginBottom: 14 }}>
+      <p style={{ fontSize: 11.5, color: c.stone, marginBottom: 12, lineHeight: 1.5 }}>Rename these 5 categories or add a short caption shown when a customer browses that category.</p>
+      {categories.map((cat) => (
+        <div key={cat.id} style={{ marginBottom: 12 }}>
+          <input
+            value={drafts[cat.id]?.name ?? cat.name}
+            onChange={(e) => setDrafts((d) => ({ ...d, [cat.id]: { ...d[cat.id], name: e.target.value } }))}
+            style={{ width: "100%", background: c.bg, border: "1px solid #2A2420", borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 6, fontWeight: 700 }}
+          />
+          <input
+            value={drafts[cat.id]?.caption ?? (cat.caption || "")}
+            onChange={(e) => setDrafts((d) => ({ ...d, [cat.id]: { ...d[cat.id], caption: e.target.value } }))}
+            placeholder="Optional caption shown to customers…"
+            style={{ width: "100%", background: c.bg, border: "1px solid #2A2420", borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 11 }}
+          />
+          <button
+            onClick={async () => { await onSave(cat.id, drafts[cat.id]); setSavedId(cat.id); setTimeout(() => setSavedId(""), 1500); }}
+            style={{ marginTop: 6, background: "none", border: `1px solid ${c.gold}`, color: c.gold, borderRadius: 6, padding: "4px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+          >
+            {savedId === cat.id ? "Saved" : "Save"}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Click-to-drop-a-pin location picker for the owner dashboard — no address
 // typing, no geocoding service, no API key. Falls back to a Corpus Christi
 // view (where VendorGrub is based) until the owner has set a pin.
@@ -450,7 +532,7 @@ function LocationPinPicker({ lat, lng, onPick, onClear, c }) {
 
 /* Loads everything needed to render the storefront + feed the chatbot, live from Supabase */
 function useTruckData() {
-  const [state, setState] = useState({ loading: true, error: null, truck: null, theme: null, menu: [], location: null, faqs: [], gallery: [], loyalty: null });
+  const [state, setState] = useState({ loading: true, error: null, truck: null, theme: null, menu: [], location: null, faqs: [], gallery: [], loyalty: null, categories: [] });
 
   const reload = useCallback(async () => {
     if (!PATH_SLUG) { setState((s) => ({ ...s, loading: false, error: null, truck: null })); return; }
@@ -461,13 +543,14 @@ function useTruckData() {
 
       // Scoped by truck_id in the query itself — each truck's data is fetched
       // independently, never pulled alongside other trucks' rows.
-      const [themeRes, menuRes, locRes, faqRes, galRes, loyaltyRes] = await Promise.all([
+      const [themeRes, menuRes, locRes, faqRes, galRes, loyaltyRes, catRes] = await Promise.all([
         rest(`truck_theme?truck_id=eq.${truck.id}&select=*`).then((r) => r.json()),
         rest(`menu_items?truck_id=eq.${truck.id}&select=*&order=sort_order`).then((r) => r.json()),
         rest(`truck_location?truck_id=eq.${truck.id}&select=*`).then((r) => r.json()),
         rest(`faqs?truck_id=eq.${truck.id}&select=*`).then((r) => r.json()),
         rest(`gallery_photos?truck_id=eq.${truck.id}&select=*&order=sort_order`).then((r) => r.json()),
         rest(`loyalty_settings?truck_id=eq.${truck.id}&select=*`).then((r) => r.json()),
+        rest(`menu_categories?truck_id=eq.${truck.id}&select=*&order=sort_order`).then((r) => r.json()),
       ]);
       setState({
         loading: false,
@@ -479,6 +562,7 @@ function useTruckData() {
         faqs: faqRes || [],
         gallery: galRes || [],
         loyalty: loyaltyRes?.[0] || null,
+        categories: catRes || [],
       });
     } catch (e) {
       setState((s) => ({ ...s, loading: false, error: String(e.message || e) }));
@@ -706,7 +790,7 @@ function SelfOnboard() {
                   <div style={{ width: 84, height: 84, borderRadius: 9, background: "#1C1C1C", border: `1px solid ${b.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <ImageIcon size={22} color={b.stone} />
                   </div>
-                  <div style={{ color: b.stone, fontWeight: 700, fontSize: 14 }}>Design {n + 1}</div>
+                  <div style={{ color: b.stone, fontWeight: 700, fontSize: 14 }}>Design {(templates?.length || 0) + n}</div>
                   <span className="vg-mono" style={{ position: "absolute", top: 10, right: 10, fontSize: 9, color: b.teal, border: `1px solid ${b.teal}`, borderRadius: 999, padding: "3px 8px", background: b.bg }}>COMING SOON</span>
                 </div>
               ))}
@@ -1173,13 +1257,16 @@ export default function App() {
 
 /* ============================= CUSTOMER SITE ============================= */
 function CustomerSite({ c, data, demoMode }) {
-  const { truck, menu, location, faqs } = data;
+  const { truck, menu, location, faqs, categories } = data;
   const [cart, setCart] = useState({}); // { menu_item_id: qty }
   const [quickView, setQuickView] = useState(null);
   const [modalQty, setModalQty] = useState(1);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [fullMenuOpen, setFullMenuOpen] = useState(false);
   const featuredScrollRef = useRef(null);
+  const [menuBrowserOpen, setMenuBrowserOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState("all");
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [fulfillment, setFulfillment] = useState("pickup");
   const [address, setAddress] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -1195,7 +1282,7 @@ function CustomerSite({ c, data, demoMode }) {
   // on mobile chains through to the page once the modal content hits its
   // own scroll boundary, dragging the page (and whatever's below, like the
   // location map) up behind the still-open modal.
-  const modalOpen = !!quickView || checkoutOpen || !!result || fullMenuOpen;
+  const modalOpen = !!quickView || checkoutOpen || !!result || fullMenuOpen || menuBrowserOpen || aboutOpen;
   useEffect(() => {
     if (!modalOpen) return;
     const prevOverflow = document.body.style.overflow;
@@ -1265,6 +1352,18 @@ function CustomerSite({ c, data, demoMode }) {
     width: 34, height: 34, borderRadius: "50%", border: "none", cursor: "pointer",
     background: c.card, color: c.gold, boxShadow: "0 2px 10px rgba(0,0,0,0.25)",
     display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2,
+  });
+
+  // Atelier's nav becomes MENU / CATERING / ABOUT / CONTACT, Menu opens a
+  // category-filterable browser instead of the plain Full Menu list, About
+  // opens a modal instead of the inline page section — all gated the same
+  // data-driven way as isNeon/isSweetheart.
+  const isAtelier = data.theme?.decoration === "floral";
+  const navLinkStyle = { background: "none", border: "none", color: c.cream, fontSize: 11, letterSpacing: 1.2, fontWeight: 600, cursor: "pointer", textDecoration: "none", fontFamily: "inherit", padding: 0 };
+  const categoryPillStyle = (active) => ({
+    flexShrink: 0, background: active ? c.gold : "none", color: active ? c.bg : c.stone,
+    border: `1px solid ${active ? c.gold : c.border}`, borderRadius: 999, padding: "8px 14px",
+    fontSize: 11, fontWeight: 700, letterSpacing: 0.5, cursor: "pointer", whiteSpace: "nowrap",
   });
 
   // Shared by the Featured Menu grid/scroll and the curated Popular Items /
@@ -1359,7 +1458,7 @@ function CustomerSite({ c, data, demoMode }) {
   return (
     <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh", paddingBottom: cartCount ? 84 : 0 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&family=Quicksand:wght@500;600;700&family=Fredoka:wght@500;600;700&family=Orbitron:wght@600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=Alex+Brush&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&family=Quicksand:wght@500;600;700&family=Fredoka:wght@500;600;700&family=Orbitron:wght@600;700;800&family=Playfair+Display:wght@600;700;800&display=swap');
         .script { font-family: 'Kaushan Script', cursive; } .mono { font-family: 'JetBrains Mono', monospace; } .display { font-family: ${HEADING_FONTS[data.theme?.heading_font]?.family || HEADING_FONTS.oswald.family}; text-transform: uppercase; }
         .hud-dot { animation: pulse 1.6s ease-in-out infinite; } @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         .checker { background-image: ${deco.backgroundImage}; background-size: ${deco.backgroundSize}; }
@@ -1370,11 +1469,20 @@ function CustomerSite({ c, data, demoMode }) {
       `}</style>
 
       <nav style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)", borderBottom: `1px solid ${c.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px" }}>
-          {data.theme?.logo_url ? <img src={data.theme.logo_url} alt={truck.name} style={{ height: 32 }} /> : <span style={{ fontFamily: (NAME_FONTS[data.theme?.font_key]?.family) || NAME_FONTS.kaushan.family, fontSize: 26, color: c.gold }}>{truck.name}</span>}
-          <a href={`tel:${truck.phone}`} style={{ display: "flex", alignItems: "center", gap: 6, background: c.gold, color: "#1A1210", padding: "8px 14px", borderRadius: 999, fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
-            <Phone size={14} /> Call
-          </a>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", rowGap: 8, padding: "12px 20px" }}>
+          {data.theme?.logo_url ? <img src={data.theme.logo_url} alt={truck.name} style={{ height: 32 }} /> : <span style={{ fontFamily: (NAME_FONTS[data.theme?.font_key]?.family) || NAME_FONTS.kaushan.family, fontSize: 26, color: c.gold, flexShrink: 0 }}>{truck.name}</span>}
+          {isAtelier ? (
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", gap: 14, flex: "1 1 auto", minWidth: 0 }}>
+              <button onClick={() => { setActiveCategory("all"); setMenuBrowserOpen(true); }} style={navLinkStyle}>MENU</button>
+              <a href={`tel:${truck.phone}`} style={navLinkStyle}>CATERING</a>
+              <button onClick={() => setAboutOpen(true)} style={navLinkStyle}>ABOUT</button>
+              <a href={`tel:${truck.phone}`} style={navLinkStyle}>CONTACT</a>
+            </div>
+          ) : (
+            <a href={`tel:${truck.phone}`} style={{ display: "flex", alignItems: "center", gap: 6, background: c.gold, color: "#1A1210", padding: "8px 14px", borderRadius: 999, fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
+              <Phone size={14} /> Call
+            </a>
+          )}
         </div>
       </nav>
 
@@ -1394,14 +1502,15 @@ function CustomerSite({ c, data, demoMode }) {
       <section style={{ position: "relative", padding: "84px 20px 40px", overflow: "hidden", border: isNeon ? `1px solid ${c.accent2}33` : undefined, borderLeft: "none", borderRight: "none" }}>
         {!data.theme?.hero_photo_url && <div style={{ position: "absolute", inset: 0, background: heroWashCss(data.theme?.decoration, c.red, c.accent2) }} />}
         {isNeon && <CornerBrackets color={c.accent2} />}
+        {isAtelier && <FloralCorners color={c.gold} />}
         <Reveal>
-          <div style={{ position: "relative", zIndex: 1 }}>
+          <div style={{ position: "relative", zIndex: 1, ...(isAtelier ? { textAlign: "center" } : {}) }}>
             <span className="mono" style={{ fontSize: 11, letterSpacing: 3, color: c.gold }}>{(truck.tagline || "").toUpperCase()}</span>
             <h1
               className={isNeon ? "neon-gradient-text" : undefined}
               style={{
                 fontFamily: (NAME_FONTS[data.theme?.font_key]?.family) || NAME_FONTS.kaushan.family,
-                fontSize: "clamp(40px, 12vw, 56px)", lineHeight: isNeon ? 1.08 : 1, margin: "8px 0 12px",
+                fontSize: "clamp(40px, 12vw, 56px)", lineHeight: (isNeon || isAtelier) ? 1.08 : 1, margin: "8px 0 12px",
                 ...(isNeon ? { textAlign: "center", backgroundImage: `linear-gradient(90deg, ${c.cream}, ${c.gold}, ${c.accent2}, ${c.cream})` } : { color: c.cream }),
               }}
             >
@@ -1477,7 +1586,7 @@ function CustomerSite({ c, data, demoMode }) {
         </section>
       )}
 
-      {truck.about_text && (
+      {truck.about_text && !isAtelier && (
         <section style={{ padding: "36px 20px" }}>
           <Reveal>
             <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>OUR STORY</span>
@@ -1717,6 +1826,49 @@ function CustomerSite({ c, data, demoMode }) {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {menuBrowserOpen && (
+        <div style={{ position: "fixed", inset: 0, background: c.bg, zIndex: 70, overflowY: "auto" }}>
+          <div style={{ position: "sticky", top: 0, background: c.bg, borderBottom: `1px solid ${c.border}`, padding: "16px 20px", zIndex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <h2 className="display" style={{ fontSize: 20, fontWeight: 700 }}>Full Menu</h2>
+              <button onClick={() => setMenuBrowserOpen(false)} style={{ background: "rgba(120,120,120,0.15)", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={16} color={c.stone} /></button>
+            </div>
+            <div className="scrollx" style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
+              <button onClick={() => setActiveCategory("all")} style={categoryPillStyle(activeCategory === "all")}>ALL ITEMS</button>
+              {(categories || []).map((cat) => (
+                <button key={cat.id} onClick={() => setActiveCategory(cat.id)} style={categoryPillStyle(activeCategory === cat.id)}>{(cat.name || "").toUpperCase()}</button>
+              ))}
+            </div>
+            {activeCategory !== "all" && (categories || []).find((cat) => cat.id === activeCategory)?.caption && (
+              <p style={{ fontSize: 12, color: c.stone, marginTop: 10, marginBottom: 0 }}>{(categories || []).find((cat) => cat.id === activeCategory).caption}</p>
+            )}
+          </div>
+          <div style={{ padding: "18px 20px 32px" }}>
+            {(() => {
+              const filtered = activeCategory === "all" ? menu : menu.filter((item) => item.category_id === activeCategory);
+              if (filtered.length === 0) return <p style={{ fontSize: 12, color: c.stone, textAlign: "center", padding: 30 }}>No items in this category yet.</p>;
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 14 }}>
+                  {filtered.map((item, i) => renderCard(item, i))}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {aboutOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setAboutOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: c.card, borderRadius: 16, padding: 26, maxWidth: 420, width: "100%", maxHeight: "80vh", overflowY: "auto", border: `1px solid ${c.border}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h2 className="display" style={{ fontSize: 19, fontWeight: 700 }}>About {truck.name}</h2>
+              <button onClick={() => setAboutOpen(false)} style={{ background: "rgba(120,120,120,0.15)", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><X size={16} color={c.stone} /></button>
+            </div>
+            <p style={{ fontSize: 14, color: c.stone, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{truck.about_text || "More about us coming soon."}</p>
           </div>
         </div>
       )}
@@ -2616,7 +2768,9 @@ function KitchenPinPanel({ c, truck, session, bare }) {
 }
 
 function DashboardContent({ c, data, session, onLogout, goSite }) {
-  const { truck, theme: themeRow, location: initialLocation, menu: initialMenu, faqs: initialFaqs, gallery: initialGallery, loadOrders, reload } = data;
+  const { truck, theme: themeRow, location: initialLocation, menu: initialMenu, faqs: initialFaqs, gallery: initialGallery, categories: initialCategories, loadOrders, reload } = data;
+  const hasCategories = themeRow?.decoration === "floral";
+  const [categories, setCategories] = useState(initialCategories || []);
   const [tab, setTab] = useState("operate"); // 'operate' | 'trucks'
   const [subTab, setSubTab] = useState("location"); // 'location' | 'orders' | 'menu' | 'faqs' | 'branding'
   const [info, setInfo] = useState({ name: truck.name, tagline: truck.tagline || "", subline: truck.subline || "", phone: truck.phone || "" });
@@ -2700,6 +2854,15 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
   const setPromoNote = async (item, note) => {
     setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, promo_note: note } : m)));
     await authedPatch(`menu_items?id=eq.${item.id}`, { promo_note: note });
+  };
+
+  const setItemCategory = async (item, categoryId) => {
+    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, category_id: categoryId } : m)));
+    await authedPatch(`menu_items?id=eq.${item.id}`, { category_id: categoryId });
+  };
+  const saveCategory = async (id, draft) => {
+    setCategories((prev) => prev.map((cat) => (cat.id === id ? { ...cat, ...draft } : cat)));
+    await authedPatch(`menu_categories?id=eq.${id}`, { name: draft.name, caption: draft.caption || null });
   };
 
   const updatePrice = async (item, newPrice) => {
@@ -2826,7 +2989,7 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
   return (
     <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=Alex+Brush&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&display=swap');
         .mono { font-family: 'JetBrains Mono', monospace; } .display { font-family: 'Oswald', sans-serif; text-transform: uppercase; } .scrollx::-webkit-scrollbar { display: none; }
       `}</style>
 
@@ -2974,6 +3137,10 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
 
             <DeliverySettingsPanel c={c} truck={truck} session={session} />
 
+            {hasCategories && categories.length > 0 && (
+              <MenuCategoriesPanel c={c} categories={categories} onSave={saveCategory} />
+            )}
+
             <div style={{ background: c.card, border: `1px dashed #3A322C`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
               <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, height: 100, border: `1px dashed #3A322C`, borderRadius: 10, marginBottom: 10, cursor: "pointer", overflow: "hidden", background: newItem.photoPreview ? `url(${newItem.photoPreview}) center/cover` : "transparent" }}>
                 {!newItem.photoPreview && <><ImageIcon size={20} color={c.stone} /><span style={{ fontSize: 11, color: c.stone }}>Add a photo</span></>}
@@ -3012,6 +3179,9 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
                       </button>
                     </div>
                     <PromoTagPicker c={c} item={item} onSetTag={setPromoTag} onSetNote={setPromoNote} />
+                    {hasCategories && categories.length > 0 && (
+                      <CategoryPicker c={c} item={item} categories={categories} onSetCategory={setItemCategory} />
+                    )}
                   </div>
                 </div>
               ))}
@@ -3065,7 +3235,9 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
 
 /* ============================= OWNER DASHBOARD (restricted — what a real truck owner sees) ============================= */
 function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
-  const { truck, theme, location: initialLocation, menu: initialMenu, faqs: initialFaqs, gallery: initialGallery, loadOrders, reload } = data;
+  const { truck, theme, location: initialLocation, menu: initialMenu, faqs: initialFaqs, gallery: initialGallery, categories: initialCategories, loadOrders, reload } = data;
+  const hasCategories = theme?.decoration === "floral";
+  const [categories, setCategories] = useState(initialCategories || []);
   const [subTab, setSubTab] = useState("location"); // 'location' | 'orders' | 'menu' | 'faqs'
   const [spot, setSpot] = useState(initialLocation?.spot || "");
   const [until, setUntil] = useState(initialLocation?.open_until || "");
@@ -3214,6 +3386,15 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
     await authedPatch(`menu_items?id=eq.${item.id}`, { promo_note: note });
   };
 
+  const setItemCategory = async (item, categoryId) => {
+    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, category_id: categoryId } : m)));
+    await authedPatch(`menu_items?id=eq.${item.id}`, { category_id: categoryId });
+  };
+  const saveCategory = async (id, draft) => {
+    setCategories((prev) => prev.map((cat) => (cat.id === id ? { ...cat, ...draft } : cat)));
+    await authedPatch(`menu_categories?id=eq.${id}`, { name: draft.name, caption: draft.caption || null });
+  };
+
   const addFaq = async () => {
     if (!newQ.trim() || !newA.trim()) return;
     const res = await authedPost(`faqs`, { truck_id: truck.id, question: newQ.trim(), answer: newA.trim() });
@@ -3227,7 +3408,7 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
   return (
     <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=Alex+Brush&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&display=swap');
         .mono { font-family: 'JetBrains Mono', monospace; } .display { font-family: 'Oswald', sans-serif; text-transform: uppercase; } .scrollx::-webkit-scrollbar { display: none; }
       `}</style>
       <nav style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(14,11,9,0.95)", borderBottom: `1px solid #2A2420`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -3386,6 +3567,12 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
               <DeliverySettingsPanel bare c={c} truck={truck} session={session} />
             </Collapsible>
 
+            {hasCategories && categories.length > 0 && (
+              <Collapsible c={c} icon={<LayoutDashboard size={17} />} title="Menu categories" summary="Rename your 5 categories or add a caption for each">
+                <MenuCategoriesPanel c={c} categories={categories} onSave={saveCategory} />
+              </Collapsible>
+            )}
+
             <div style={{ background: c.card, border: `1px dashed #3A322C`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
               <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, height: 100, border: `1px dashed #3A322C`, borderRadius: 10, marginBottom: 10, cursor: "pointer", overflow: "hidden", background: newItem.photoPreview ? `url(${newItem.photoPreview}) center/cover` : "transparent" }}>
                 {!newItem.photoPreview && <><ImageIcon size={20} color={c.stone} /><span style={{ fontSize: 11, color: c.stone }}>Add a photo</span></>}
@@ -3423,6 +3610,9 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
                       </button>
                     </div>
                     <PromoTagPicker c={c} item={item} onSetTag={setPromoTag} onSetNote={setPromoNote} />
+                    {hasCategories && categories.length > 0 && (
+                      <CategoryPicker c={c} item={item} categories={categories} onSetCategory={setItemCategory} />
+                    )}
                   </div>
                 </div>
               ))}
