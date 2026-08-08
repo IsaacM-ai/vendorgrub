@@ -2499,13 +2499,23 @@ function Collapsible({ c, title, summary, icon, defaultOpen = false, open: contr
   const toggle = () => (isControlled ? onToggle?.(!open) : setInternalOpen((o) => !o));
 
   return (
-    <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, marginBottom: 12, overflow: "hidden" }}>
+    <div
+      style={{
+        background: `${c.card}E6`, backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
+        border: `1px solid ${c.border}`, borderRadius: 20, marginBottom: 14, overflow: "hidden",
+        boxShadow: c.mode === "light" ? "0 10px 28px rgba(30,15,25,0.08)" : "0 10px 28px rgba(0,0,0,0.35)",
+      }}
+    >
       <button
         onClick={toggle}
         aria-expanded={open}
         style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", color: c.cream, padding: 16, cursor: "pointer", textAlign: "left" }}
       >
-        {icon && <span style={{ flexShrink: 0, display: "flex", color: c.gold }}>{icon}</span>}
+        {icon && (
+          <span style={{ flexShrink: 0, width: 38, height: 38, borderRadius: "50%", background: `${c.gold}1F`, display: "flex", alignItems: "center", justifyContent: "center", color: c.gold }}>
+            {icon}
+          </span>
+        )}
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: "block", fontWeight: 700, fontSize: 13.5 }}>{title}</span>
           {summary && <span style={{ display: "block", fontSize: 11, color: c.stone, marginTop: 2 }}>{summary}</span>}
@@ -2786,6 +2796,8 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
   const [lng, setLng] = useState(initialLocation?.lng ?? null);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileDraft, setProfileDraft] = useState(null);
   const [menu, setMenu] = useState(initialMenu);
   const [faqs, setFaqs] = useState(initialFaqs);
   const [orders, setOrders] = useState([]);
@@ -3043,30 +3055,55 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
 
         {subTab === "location" && (
         <>
-        <TruckProfilePanel c={c} truck={truck} theme={themeRow} session={session} reload={reload} />
-        <Reveal>
-          <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-              <MapPin size={16} color={c.gold} />
-              <span style={{ fontWeight: 700, fontSize: 14 }}>Today's Location</span>
-            </div>
-            <label className="mono" style={{ fontSize: 10, color: c.stone }}>WHERE ARE WE PARKED</label>
-            <input value={spot} onChange={(e) => setSpot(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 12, fontSize: 14 }} />
-            <label className="mono" style={{ fontSize: 10, color: c.stone }}>OPEN UNTIL</label>
-            <input value={until} onChange={(e) => setUntil(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
-            <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "OPEN" ? c.green : "#2A2420"}`, background: status === "OPEN" ? `${c.green}22` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
-              <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "CLOSED" ? c.red : "#2A2420"}`, background: status === "CLOSED" ? `${c.red}22` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
-            </div>
-            <button onClick={saveLocation} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-              {saved ? "✓ Updated — live on site now" : "Update Location"}
-            </button>
-            {saveError && <p style={{ color: c.red, fontSize: 11, marginTop: 8 }}>{saveError}</p>}
-          </div>
-        </Reveal>
+        <SetupChecklist c={c} truck={truck} theme={themeRow} menu={menu} location={{ ...initialLocation, lat, lng, status }} onGo={setSubTab} />
 
-        <KitchenPinPanel c={c} truck={truck} session={session} />
+        {profileOpen && (
+          <LivePreviewFrame
+            truck={truck} theme={themeRow} draft={profileDraft}
+            location={{ ...initialLocation, spot, open_until: until, status, lat, lng }}
+            menu={menu} faqs={faqs}
+          />
+        )}
+        <Collapsible
+          c={c} icon={<Truck size={17} />}
+          title="Your truck details"
+          summary={truck.about_text ? "Name, photo, lettering and your story" : "Name, photo, lettering — add your story"}
+          open={profileOpen} onToggle={setProfileOpen}
+        >
+          <TruckProfilePanel bare c={c} truck={truck} theme={themeRow} session={session} reload={reload} onDraftChange={setProfileDraft} />
+        </Collapsible>
+
+        <Collapsible c={c} icon={<Store size={17} />} title="Kitchen screen PIN" summary="For staff taking orders on a second screen">
+          <KitchenPinPanel bare c={c} truck={truck} session={session} />
+        </Collapsible>
+
+        <Collapsible
+          c={c} icon={<MapPin size={17} />}
+          title="Location"
+          summary={status === "OPEN" ? `Open${spot ? ` — parked at ${spot}` : ""}` : "Closed — update when you're back"}
+        >
+          <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>Update this whenever you move. Customers see it at the top of your site straight away.</p>
+
+          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Where are you parked?</label>
+          <input value={spot} onChange={(e) => setSpot(e.target.value)} placeholder="e.g. Cole Park, by the pier" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 12, fontSize: 14 }} />
+
+          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Serving until</label>
+          <input value={until} onChange={(e) => setUntil(e.target.value)} placeholder="e.g. 8PM" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
+
+          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Drop a pin so customers can find you</label>
+          <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
+
+          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Are you serving right now?</label>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "OPEN" ? c.green : c.border}`, background: status === "OPEN" ? `${c.green}1F` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
+            <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "CLOSED" ? c.red : c.border}`, background: status === "CLOSED" ? `${c.red}1F` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
+          </div>
+
+          <button onClick={saveLocation} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "13px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: `0 6px 18px ${c.gold}40` }}>
+            {saved ? <CheckCircle2 size={14} /> : <Send size={14} />} {saved ? "Updated — live on site now" : "Update Location"}
+          </button>
+          {saveError && <p style={{ color: c.red, fontSize: 11, marginTop: 8 }}>{saveError}</p>}
+        </Collapsible>
         </>
         )}
 
@@ -3446,38 +3483,6 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
         <>
         <SetupChecklist c={c} truck={truck} theme={theme} menu={menu} location={{ ...initialLocation, lat, lng, status }} onGo={setSubTab} />
 
-        {/* Today's spot sits first and open: it's the one thing an owner
-            comes back to change every single shift. */}
-        <Reveal>
-          <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 16, marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <MapPin size={17} color={c.gold} />
-              <span style={{ fontWeight: 700, fontSize: 13.5 }}>Where you are today</span>
-            </div>
-            <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>Update this whenever you move. Customers see it at the top of your site straight away.</p>
-
-            <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Where are you parked?</label>
-            <input value={spot} onChange={(e) => setSpot(e.target.value)} placeholder="e.g. Cole Park, by the pier" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 12, fontSize: 14 }} />
-
-            <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Serving until</label>
-            <input value={until} onChange={(e) => setUntil(e.target.value)} placeholder="e.g. 8PM" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
-
-            <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Drop a pin so customers can find you</label>
-            <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
-
-            <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Are you serving right now?</label>
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "OPEN" ? c.green : "#2A2420"}`, background: status === "OPEN" ? `${c.green}22` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
-              <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${status === "CLOSED" ? c.red : "#2A2420"}`, background: status === "CLOSED" ? `${c.red}22` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
-            </div>
-
-            <button onClick={saveLocation} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-              {saved ? "✓ Updated — live on site now" : "Update Location"}
-            </button>
-            {saveError && <p style={{ color: c.red, fontSize: 11, marginTop: 8 }}>{saveError}</p>}
-          </div>
-        </Reveal>
-
         {profileOpen && (
           <LivePreviewFrame
             truck={truck} theme={theme} draft={profileDraft}
@@ -3496,6 +3501,36 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
 
         <Collapsible c={c} icon={<Store size={17} />} title="Kitchen screen PIN" summary="For staff taking orders on a second screen">
           <KitchenPinPanel bare c={c} truck={truck} session={session} />
+        </Collapsible>
+
+        {/* Last in the stack now that it's collapsible like the other two —
+            still just one tap away from the top of the page. */}
+        <Collapsible
+          c={c} icon={<MapPin size={17} />}
+          title="Location"
+          summary={status === "OPEN" ? `Open${spot ? ` — parked at ${spot}` : ""}` : "Closed — update when you're back"}
+        >
+          <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>Update this whenever you move. Customers see it at the top of your site straight away.</p>
+
+          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Where are you parked?</label>
+          <input value={spot} onChange={(e) => setSpot(e.target.value)} placeholder="e.g. Cole Park, by the pier" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 12, fontSize: 14 }} />
+
+          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Serving until</label>
+          <input value={until} onChange={(e) => setUntil(e.target.value)} placeholder="e.g. 8PM" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
+
+          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Drop a pin so customers can find you</label>
+          <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
+
+          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Are you serving right now?</label>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "OPEN" ? c.green : c.border}`, background: status === "OPEN" ? `${c.green}1F` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
+            <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "CLOSED" ? c.red : c.border}`, background: status === "CLOSED" ? `${c.red}1F` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
+          </div>
+
+          <button onClick={saveLocation} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "13px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: `0 6px 18px ${c.gold}40` }}>
+            {saved ? <CheckCircle2 size={14} /> : <Send size={14} />} {saved ? "Updated — live on site now" : "Update Location"}
+          </button>
+          {saveError && <p style={{ color: c.red, fontSize: 11, marginTop: 8 }}>{saveError}</p>}
         </Collapsible>
         </>
         )}
