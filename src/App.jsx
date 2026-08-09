@@ -3668,6 +3668,29 @@ function TrucksManager({ c, session, currentTruckId }) {
   const [confirmDelete, setConfirmDelete] = useState(null); // slug pending confirmation
   const [busy, setBusy] = useState("");
 
+  const [templates, setTemplates] = useState(null);
+  const [ownerForm, setOwnerForm] = useState({ slug: "", name: "", phone: "", tagline: "", template_key: "", owner_email: "", owner_password: "" });
+  const [creatingOwner, setCreatingOwner] = useState(false);
+  const [ownerError, setOwnerError] = useState("");
+  const [ownerResult, setOwnerResult] = useState(null); // { slug, owner_email, owner_password } — shown once, right after creation
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    rest(`site_templates?select=*&order=sort_order`).then((r) => r.json()).then(setTemplates);
+  }, []);
+
+  // Random, readable-enough password so the admin isn't stuck inventing one
+  // for someone else's account — still meets the app's own 8-char minimum
+  // several times over.
+  const generatePassword = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%";
+    const arr = new Uint32Array(14);
+    crypto.getRandomValues(arr);
+    let pw = "";
+    for (let i = 0; i < arr.length; i++) pw += chars[arr[i] % chars.length];
+    setOwnerForm((s) => ({ ...s, owner_password: pw }));
+  };
+
   const loadTrucks = useCallback(async () => {
     setLoading(true);
     const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-trucks-overview`, {
@@ -3680,6 +3703,25 @@ function TrucksManager({ c, session, currentTruckId }) {
   }, [session.access_token]);
 
   useEffect(() => { loadTrucks(); }, [loadTrucks]);
+
+  const createTruckWithOwner = async () => {
+    setOwnerError("");
+    if (!ownerForm.slug.trim() || !ownerForm.name.trim() || !ownerForm.template_key || !ownerForm.owner_email.trim() || ownerForm.owner_password.length < 8) {
+      setOwnerError("Slug, name, a design, owner email, and an 8+ character password are all required.");
+      return;
+    }
+    setCreatingOwner(true);
+    const res = await authedFn("admin-create-truck-with-owner", {
+      slug: ownerForm.slug.trim(), truck_name: ownerForm.name.trim(), phone: ownerForm.phone.trim(),
+      tagline: ownerForm.tagline.trim(), template_key: ownerForm.template_key,
+      owner_email: ownerForm.owner_email.trim(), owner_password: ownerForm.owner_password,
+    }, session.access_token);
+    setCreatingOwner(false);
+    if (res.error) { setOwnerError(res.error); return; }
+    setOwnerResult({ slug: res.slug, owner_email: ownerForm.owner_email.trim(), owner_password: ownerForm.owner_password });
+    setOwnerForm({ slug: "", name: "", phone: "", tagline: "", template_key: "", owner_email: "", owner_password: "" });
+    loadTrucks();
+  };
 
   const createTruck = async () => {
     setError("");
@@ -3725,7 +3767,8 @@ function TrucksManager({ c, session, currentTruckId }) {
       </p>
 
       <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: 14, marginBottom: 20 }}>
-        <span style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, display: "block" }}>+ New Truck</span>
+        <span style={{ fontWeight: 700, fontSize: 13, display: "block" }}>+ New Truck (unclaimed)</span>
+        <span style={{ fontSize: 10.5, color: c.stone, display: "block", marginBottom: 10 }}>No owner login — you manage it yourself from your own admin account. Good for internal test trucks.</span>
         <input value={form.slug} onChange={(e) => setForm((s) => ({ ...s, slug: e.target.value.toLowerCase().replace(/[^a-z0-9]/g, "") }))} placeholder="slug (e.g. tacotime)" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
         <input value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} placeholder="Display name" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
         <input value={form.tagline} onChange={(e) => setForm((s) => ({ ...s, tagline: e.target.value }))} placeholder="Tagline" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
@@ -3734,6 +3777,64 @@ function TrucksManager({ c, session, currentTruckId }) {
         <button onClick={createTruck} disabled={creating} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "10px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
           {creating ? "Creating…" : "Create Truck"}
         </button>
+      </div>
+
+      <div style={{ background: c.card, border: `1px solid ${c.gold}55`, borderRadius: 12, padding: 14, marginBottom: 20 }}>
+        <span style={{ fontWeight: 700, fontSize: 13, display: "block" }}>+ New Truck for Someone Else</span>
+        <span style={{ fontSize: 10.5, color: c.stone, display: "block", marginBottom: 10 }}>Creates the truck and a real owner login in one step — they can log into /manage themselves right away.</span>
+
+        <input value={ownerForm.slug} onChange={(e) => setOwnerForm((s) => ({ ...s, slug: e.target.value.toLowerCase().replace(/[^a-z0-9]/g, "") }))} placeholder="slug (e.g. tacotime)" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+        <input value={ownerForm.name} onChange={(e) => setOwnerForm((s) => ({ ...s, name: e.target.value }))} placeholder="Display name" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+        <input value={ownerForm.tagline} onChange={(e) => setOwnerForm((s) => ({ ...s, tagline: e.target.value }))} placeholder="Tagline" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+        <input value={ownerForm.phone} onChange={(e) => setOwnerForm((s) => ({ ...s, phone: e.target.value }))} placeholder="Phone" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+
+        <span style={{ fontSize: 10.5, color: c.stone, display: "block", marginBottom: 6, marginTop: 4 }}>Pick a design</span>
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 8 }}>
+          {!templates && <span style={{ fontSize: 11, color: c.stone }}>Loading designs…</span>}
+          {templates?.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setOwnerForm((s) => ({ ...s, template_key: t.key }))}
+              style={{ flexShrink: 0, width: 84, background: "none", border: `2px solid ${ownerForm.template_key === t.key ? c.gold : "#2A2420"}`, borderRadius: 10, padding: 4, cursor: "pointer" }}
+            >
+              <TemplateThumb t={t} />
+              <span style={{ display: "block", fontSize: 9, color: c.stone, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.name}</span>
+            </button>
+          ))}
+        </div>
+
+        <input value={ownerForm.owner_email} onChange={(e) => setOwnerForm((s) => ({ ...s, owner_email: e.target.value }))} placeholder="Owner's email" type="email" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+          <input value={ownerForm.owner_password} onChange={(e) => setOwnerForm((s) => ({ ...s, owner_password: e.target.value }))} placeholder="Owner's password (8+ chars)" style={{ flex: 1, minWidth: 0, background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12 }} />
+          <button onClick={generatePassword} style={{ flexShrink: 0, background: "none", border: `1px solid #2A2420`, color: c.gold, borderRadius: 8, padding: "0 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Generate</button>
+        </div>
+
+        {ownerError && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{ownerError}</p>}
+        <button onClick={createTruckWithOwner} disabled={creatingOwner} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "10px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer", opacity: creatingOwner ? 0.6 : 1 }}>
+          {creatingOwner ? "Creating…" : "Create Truck + Owner Login"}
+        </button>
+
+        {ownerResult && (
+          <div style={{ background: c.bg, border: `1px solid ${c.green}`, borderRadius: 10, padding: 12, marginTop: 12 }}>
+            <p style={{ fontSize: 11, color: c.green, fontWeight: 700, marginBottom: 8 }}>✓ Created — send these to the owner now. The password won't be shown again.</p>
+            <div className="mono" style={{ fontSize: 11, color: c.cream, lineHeight: 1.8 }}>
+              Site: {ownerResult.slug}.vendorgrub.com<br />
+              Login: /login<br />
+              Email: {ownerResult.owner_email}<br />
+              Password: {ownerResult.owner_password}
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`Your VendorGrub site is ready!\nSite: ${ownerResult.slug}.vendorgrub.com\nLogin: /login\nEmail: ${ownerResult.owner_email}\nPassword: ${ownerResult.owner_password}`);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }}
+              style={{ marginTop: 10, width: "100%", background: "none", border: `1px solid ${c.gold}`, color: c.gold, borderRadius: 8, padding: "8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+            >
+              {copied ? "Copied!" : "Copy Credentials"}
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? <p style={{ fontSize: 12, color: c.stone }}>Loading…</p> : (
