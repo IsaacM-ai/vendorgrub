@@ -679,19 +679,21 @@ function SelfOnboard() {
       <div style={{ background: b.bg, color: b.white, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Manrope', system-ui, sans-serif", padding: 24, textAlign: "center" }}>
         <div style={{ width: "100%", maxWidth: 320 }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
-          <h2 className="vg-display" style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Your Ordering Page is Live!</h2>
+          <h2 className="vg-display" style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Your VendorGrub site is created!</h2>
           <p style={{ color: b.stone, fontSize: 13, marginBottom: 20 }}>{form.truck_name}</p>
 
           <div style={{ background: "#fff", borderRadius: 16, padding: 20, display: "inline-block", marginBottom: 16 }}>
             <QRCodeCanvas id="signup-qr" value={fullUrl} size={180} fgColor="#0A0A0A" bgColor="#ffffff" />
           </div>
-          <p className="vg-mono" style={{ fontSize: 11, color: b.teal, marginBottom: 20 }}>{siteUrl}</p>
+          <p className="vg-mono" style={{ fontSize: 11, color: b.teal, marginBottom: 4 }}>{siteUrl}</p>
+          <p style={{ color: b.stone, fontSize: 12.5, lineHeight: 1.5, marginBottom: 20 }}>Your page is ready. Let's add your menu, location, and truck details before customers start ordering.</p>
 
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             <button onClick={downloadQR} style={{ flex: 1, background: b.card, border: `1px solid ${b.border}`, color: b.white, padding: "12px", borderRadius: 10, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Download QR</button>
             <button onClick={copyLink} style={{ flex: 1, background: b.card, border: `1px solid ${b.border}`, color: b.white, padding: "12px", borderRadius: 10, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Copy Link</button>
           </div>
-          <a href={`/${success}/manage`} style={{ display: "block", background: b.teal, color: "#0A0A0A", padding: "13px", borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: "none", marginBottom: 10 }}>Go to My Dashboard →</a>
+          <a href={`/${success}/manage`} style={{ display: "block", background: b.teal, color: "#0A0A0A", padding: "13px", borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: "none", marginBottom: 10 }}>Finish My Setup →</a>
+          <a href={`/${success}/manage`} style={{ display: "block", color: b.stone, fontSize: 12, textDecoration: "underline", marginBottom: 10 }}>I'll Do This Later</a>
           <a href={`/${success}`} style={{ display: "block", color: b.stone, fontSize: 12, textDecoration: "underline" }}>View My Website</a>
         </div>
       </div>
@@ -2530,16 +2532,55 @@ function Collapsible({ c, title, summary, icon, defaultOpen = false, open: contr
 // Turns "here are all your settings" into "here is your next step". Hides
 // itself once the truck is actually ready, so it guides setup without
 // becoming permanent clutter.
+// The three things a truck genuinely needs before customers can find and
+// order from it. Everything else is polish, not a blocker -- conflating
+// the two used to mean the dashboard kept nudging "still setting up" even
+// after an owner was, functionally, open for business.
+const REQUIRED_SETUP_STEPS = [
+  { label: "Add your first menu item", done: (menu, truck, theme, location) => (menu?.length || 0) > 0, tab: "menu" },
+  { label: "Pin where you park", done: (menu, truck, theme, location) => location?.lat != null && location?.lng != null, tab: "location" },
+  { label: "Switch yourself to Open", done: (menu, truck, theme, location) => location?.status === "OPEN", tab: "location" },
+];
+const OPTIONAL_SETUP_STEPS = [
+  { label: "Upload a photo for your header", done: (menu, truck, theme, location) => !!theme?.hero_photo_url, tab: "location" },
+  { label: "Tell customers your story", done: (menu, truck, theme, location) => !!truck?.about_text, tab: "location" },
+];
+
 function SetupChecklist({ c, truck, theme, menu, location, onGo }) {
-  const steps = [
-    { label: "Add your first menu item", done: (menu?.length || 0) > 0, tab: "menu" },
-    { label: "Upload a photo for your header", done: !!theme?.hero_photo_url, tab: "location" },
-    { label: "Tell customers your story", done: !!truck?.about_text, tab: "location" },
-    { label: "Pin where you park", done: location?.lat != null && location?.lng != null, tab: "location" },
-    { label: "Switch yourself to Open", done: location?.status === "OPEN", tab: "location" },
-  ];
+  const resolve = (list) => list.map((s) => ({ ...s, done: s.done(menu, truck, theme, location) }));
+  const required = resolve(REQUIRED_SETUP_STEPS);
+  const optional = resolve(OPTIONAL_SETUP_STEPS);
+  const steps = [...required, ...optional];
   const done = steps.filter((s) => s.done).length;
   if (done === steps.length) return null;
+
+  const readyToOpen = required.every((s) => s.done);
+
+  if (readyToOpen) {
+    return (
+      <div style={{ background: c.card, border: `1px solid ${c.green}77`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 17 }}>🚀</span>
+          <span style={{ fontWeight: 700, fontSize: 13.5 }}>You're ready to open</span>
+        </div>
+        <p style={{ fontSize: 11.5, color: c.stone, marginBottom: 12 }}>Customers can find and order from you right now. A couple of extras whenever you have time:</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          {optional.map((s) => (
+            <button
+              key={s.label}
+              onClick={() => onGo(s.tab)}
+              style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", color: s.done ? c.stone : c.cream }}
+            >
+              {s.done
+                ? <CheckCircle2 size={15} color={c.green} style={{ flexShrink: 0 }} />
+                : <Circle size={15} color="#3A322C" style={{ flexShrink: 0 }} />}
+              <span style={{ fontSize: 12.5, textDecoration: s.done ? "line-through" : "none" }}>{s.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const next = steps.find((s) => !s.done);
   return (
