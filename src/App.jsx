@@ -1972,9 +1972,7 @@ function OwnerDashboard({ c: cIn, data, session, setSession, goSite }) {
   if (restoring) return <div style={{ background: c.bg, color: c.stone, minHeight: "100vh" }} />;
   if (!session) return <LoginScreen c={c} onLogin={setSession} goSite={goSite} />;
   if (role === null) return <div style={{ background: c.bg, color: c.stone, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Checking access…</div>;
-  return role === "admin"
-    ? <DashboardContent c={c} data={data} session={session} onLogout={logout} goSite={goSite} />
-    : <OwnerDashboardLite c={c} data={data} session={session} onLogout={logout} goSite={goSite} />;
+  return <Dashboard c={c} data={data} session={session} onLogout={logout} goSite={goSite} role={role} />;
 }
 
 function LoginScreen({ c, onLogin, goSite }) {
@@ -2538,12 +2536,12 @@ function Collapsible({ c, title, summary, icon, defaultOpen = false, open: contr
 // after an owner was, functionally, open for business.
 const REQUIRED_SETUP_STEPS = [
   { label: "Add your first menu item", done: (menu, truck, theme, location) => (menu?.length || 0) > 0, tab: "menu" },
-  { label: "Pin where you park", done: (menu, truck, theme, location) => location?.lat != null && location?.lng != null, tab: "location" },
-  { label: "Switch yourself to Open", done: (menu, truck, theme, location) => location?.status === "OPEN", tab: "location" },
+  { label: "Pin where you park", done: (menu, truck, theme, location) => location?.lat != null && location?.lng != null, tab: "home" },
+  { label: "Switch yourself to Open", done: (menu, truck, theme, location) => location?.status === "OPEN", tab: "home" },
 ];
 const OPTIONAL_SETUP_STEPS = [
-  { label: "Upload a photo for your header", done: (menu, truck, theme, location) => !!theme?.hero_photo_url, tab: "location" },
-  { label: "Tell customers your story", done: (menu, truck, theme, location) => !!truck?.about_text, tab: "location" },
+  { label: "Upload a photo for your header", done: (menu, truck, theme, location) => !!theme?.hero_photo_url, tab: "website" },
+  { label: "Tell customers your story", done: (menu, truck, theme, location) => !!truck?.about_text, tab: "website" },
 ];
 
 function SetupChecklist({ c, truck, theme, menu, location, onGo }) {
@@ -2912,23 +2910,39 @@ function TakeOrderPanel({ c, truck, menu, session, onCreated }) {
   );
 }
 
-function DashboardContent({ c, data, session, onLogout, goSite }) {
-  const { truck, theme: themeRow, location: initialLocation, menu: initialMenu, faqs: initialFaqs, gallery: initialGallery, categories: initialCategories, loadOrders, reload } = data;
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+/* ============================= OWNER DASHBOARD SHELL =============================
+   One shared dashboard for both admin-owned trucks and regular owners --
+   they used to be two near-identical ~500-line components that only really
+   differed in three places (nav identity text, the This Truck/All Trucks
+   switcher, and the marketplace-listing toggle), all handled here with an
+   `isAdmin` check instead of forking the whole component.
+
+   Nav is Home | Orders | Menu | Website | More: operational things an owner
+   checks daily (is it open, where's it parked, what are today's orders) up
+   front, configuration/settings things collapsed under Website and More. */
+function Dashboard({ c, data, session, onLogout, goSite, role }) {
+  const isAdmin = role === "admin";
+  const { truck, theme: themeRow, location: initialLocation, menu: initialMenu, faqs: initialFaqs, categories: initialCategories, loadOrders, reload } = data;
   const hasCategories = themeRow?.decoration === "floral";
+
+  const [view, setView] = useState("dashboard"); // 'dashboard' | 'trucks' (admin-only truck switcher)
+  const [tab, setTab] = useState("home"); // 'home' | 'orders' | 'menu' | 'website' | 'more'
   const [categories, setCategories] = useState(initialCategories || []);
-  const [tab, setTab] = useState("operate"); // 'operate' | 'trucks'
-  const [subTab, setSubTab] = useState("location"); // 'location' | 'orders' | 'menu' | 'faqs' | 'branding'
-  const [info, setInfo] = useState({ name: truck.name, tagline: truck.tagline || "", subline: truck.subline || "", phone: truck.phone || "" });
   const [listed, setListed] = useState(truck.is_listed || false);
-  const [infoSaved, setInfoSaved] = useState(false);
-  const [infoError, setInfoError] = useState("");
-  const [gallery, setGallery] = useState(initialGallery);
-  const [uploading, setUploading] = useState("");
+  const [listedSaved, setListedSaved] = useState(false);
   const [spot, setSpot] = useState(initialLocation?.spot || "");
   const [until, setUntil] = useState(initialLocation?.open_until || "");
   const [status, setStatus] = useState(initialLocation?.status || "OPEN");
   const [lat, setLat] = useState(initialLocation?.lat ?? null);
   const [lng, setLng] = useState(initialLocation?.lng ?? null);
+  const [locationEditing, setLocationEditing] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
@@ -2941,8 +2955,7 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
   const [newItem, setNewItem] = useState({ name: "", price: "", description: "", photoFile: null, photoPreview: null });
   const [newItemError, setNewItemError] = useState("");
   const [addingItem, setAddingItem] = useState(false);
-  const [theme, setTheme] = useState({ color_gold: c.gold, color_red: c.red, color_bg: c.bg, color_card: c.card });
-  const [themeSaved, setThemeSaved] = useState(false);
+  const [uploading, setUploading] = useState("");
 
   useEffect(() => {
     loadOrders(truck.id, session.access_token).then(setOrders);
@@ -2982,6 +2995,7 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
         return;
       }
       setSaved(true);
+      setLocationEditing(false);
       setTimeout(() => setSaved(false), 1800);
     } catch (e) {
       setSaveError(`Update failed — ${e.message}. Check your connection and try again.`);
@@ -3061,27 +3075,6 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
     await authedDelete(`menu_items?id=eq.${id}`);
   };
 
-  const saveTheme = async () => {
-    const res = await authedPatch(`truck_theme?truck_id=eq.${truck.id}`, theme);
-    if (res.ok) {
-      setThemeSaved(true);
-      setTimeout(() => setThemeSaved(false), 1800);
-    }
-  };
-
-  const saveInfo = async () => {
-    setInfoError("");
-    const res = await authedPatch(`trucks?id=eq.${truck.id}`, { ...info, is_listed: listed });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setInfoError(err.message || `Save failed (${res.status}) — check console/network tab for details.`);
-      return;
-    }
-    setInfoSaved(true);
-    reload();
-    setTimeout(() => setInfoSaved(false), 1800);
-  };
-
   const handleMenuPhoto = async (item, file) => {
     setUploading(item.id);
     try {
@@ -3096,34 +3089,10 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
     setUploading("");
   };
 
-  const handleThemePhoto = async (field, file) => {
-    setUploading(field);
-    try {
-      const url = await uploadPhoto(file, `trucks/${truck.id}/theme/${field}-${Date.now()}.${file.name.split(".").pop()}`, session.access_token);
-      const res = await authedPatch(`truck_theme?truck_id=eq.${truck.id}`, { [field]: url });
-      if (res.ok) reload();
-    } catch (e) { alert(e.message); }
-    setUploading("");
-  };
-
-  const handleGalleryUpload = async (file) => {
-    setUploading("gallery");
-    try {
-      const url = await uploadPhoto(file, `trucks/${truck.id}/gallery/${Date.now()}.${file.name.split(".").pop()}`, session.access_token);
-      const res = await authedPost(`gallery_photos`, { truck_id: truck.id, photo_url: url, sort_order: gallery.length + 1 });
-      if (res.ok) { const created = await res.json(); setGallery((prev) => [...prev, ...created]); }
-    } catch (e) { alert(e.message); }
-    setUploading("");
-  };
-
-  const deleteGalleryPhoto = async (id) => {
-    setGallery((prev) => prev.filter((g) => g.id !== id));
-    await authedDelete(`gallery_photos?id=eq.${id}`);
-  };
-
   const addFaq = async () => {
     if (!newQ.trim() || !newA.trim()) return;
     const res = await authedPost(`faqs`, { truck_id: truck.id, question: newQ.trim(), answer: newA.trim() });
+    if (!res.ok) return;
     const created = await res.json();
     setFaqs((prev) => [...prev, ...created]);
     setNewQ(""); setNewA("");
@@ -3133,121 +3102,138 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
     await authedDelete(`faqs?id=eq.${id}`);
   };
 
+  const fullSiteUrl = `https://vendorgrub.netlify.app/${truck.slug}`;
+  const siteUrlDisplay = `${truck.slug}.vendorgrub.netlify.app`;
+  const downloadQR = () => {
+    const canvas = document.getElementById("dash-qr");
+    if (!canvas) return;
+    const link = document.createElement("a");
+    link.download = `${truck.slug}-qr-code.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  };
+  const copyLink = () => navigator.clipboard.writeText(fullSiteUrl);
+
+  const activeOrders = orders.filter((o) => o.status !== "completed");
+  const todaysOrders = orders.filter((o) => new Date(o.created_at).toDateString() === new Date().toDateString());
+  const todaysValue = todaysOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+
+  const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=Alex+Brush&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&display=swap');";
+
+  if (view === "trucks") {
+    return (
+      <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh" }}>
+        <style>{`${fontImport} .mono { font-family: 'JetBrains Mono', monospace; }`}</style>
+        <nav style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(14,11,9,0.95)", borderBottom: `1px solid #2A2420`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <button onClick={() => setView("dashboard")} style={{ background: "none", border: "none", color: c.stone, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>← Back to Dashboard</button>
+          <span className="mono" style={{ fontSize: 12, color: c.gold, letterSpacing: 1 }}>ALL TRUCKS</span>
+          <button onClick={onLogout} style={{ background: "none", border: "none", color: c.stone, cursor: "pointer" }}><LogOut size={16} /></button>
+        </nav>
+        <TrucksManager c={c} session={session} currentTruckId={truck.id} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=Alex+Brush&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&display=swap');
+        ${fontImport}
         .mono { font-family: 'JetBrains Mono', monospace; } .display { font-family: 'Oswald', sans-serif; text-transform: uppercase; } .scrollx::-webkit-scrollbar { display: none; }
       `}</style>
 
       <nav style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(14,11,9,0.95)", borderBottom: `1px solid #2A2420`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <button onClick={goSite} style={{ background: "none", border: "none", color: c.stone, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>View Website →</button>
-        <span className="mono" style={{ fontSize: 12, color: c.gold, letterSpacing: 1 }}>{session.email}</span>
+        <span className="mono" style={{ fontSize: 12, color: c.gold, letterSpacing: 1 }}>{isAdmin ? session.email : `${truck.name} — Owner`}</span>
         <button onClick={onLogout} style={{ background: "none", border: "none", color: c.stone, cursor: "pointer" }}><LogOut size={16} /></button>
       </nav>
 
-      <div style={{ display: "flex", borderBottom: `1px solid #2A2420` }}>
-        <button onClick={() => setTab("operate")} style={{ flex: 1, padding: "12px", background: "none", border: "none", borderBottom: tab === "operate" ? `2px solid ${c.gold}` : "2px solid transparent", color: tab === "operate" ? c.gold : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>THIS TRUCK</button>
-        <button onClick={() => setTab("trucks")} style={{ flex: 1, padding: "12px", background: "none", border: "none", borderBottom: tab === "trucks" ? `2px solid ${c.gold}` : "2px solid transparent", color: tab === "trucks" ? c.gold : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>ALL TRUCKS</button>
-      </div>
-
-      {tab === "trucks" ? (
-        <TrucksManager c={c} session={session} currentTruckId={truck.id} />
-      ) : (
-      <>
-      <div style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid #2A2420`, background: "#0A0807" }}>
-        {[["location", "Location"], ["orders", "Orders"], ["menu", "Menu"], ["faqs", "FAQs"], ["loyalty", "Loyalty"], ["branding", "Branding"]].map(([key, label]) => (
-          <button key={key} onClick={() => setSubTab(key)} style={{ padding: "10px 16px", background: "none", border: "none", borderBottom: subTab === key ? `2px solid ${c.gold}` : "2px solid transparent", color: subTab === key ? c.gold : c.stone, fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
+      <div style={{ display: "flex", borderBottom: `1px solid #2A2420`, background: "#0A0807" }}>
+        {[["home", "Home"], ["orders", "Orders"], ["menu", "Menu"], ["website", "Website"], ["more", "More"]].map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)} style={{ flex: 1, padding: "12px 6px", background: "none", border: "none", borderBottom: tab === key ? `2px solid ${c.gold}` : "2px solid transparent", color: tab === key ? c.gold : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
         ))}
       </div>
-      <div style={{ padding: "20px" }}>
-        {subTab === "loyalty" && (
-          <LoyaltyPanel c={c} truck={truck} session={session} />
-        )}
 
-        {subTab === "branding" && (
+      <div style={{ padding: "20px" }}>
+        {tab === "home" && (
         <Reveal>
-          <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>Marketplace Listing</span>
+          <h1 className="display" style={{ fontSize: 19, fontWeight: 700, marginBottom: 16 }}>{greeting()}, {truck.name} 👋</h1>
+
+          <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: status === "OPEN" ? c.green : c.red, flexShrink: 0 }} />
+              <span style={{ fontWeight: 700, fontSize: 13 }}>{status === "OPEN" ? "OPEN" : "CLOSED"}</span>
             </div>
-            <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>Name, tagline, phone, and the hero photo now live under the Location tab. This stays here since only you control it.</p>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", marginBottom: 14 }}>
-              <div>
-                <div style={{ fontSize: 12.5, fontWeight: 600 }}>Public Marketplace Listing</div>
-                <div style={{ fontSize: 10, color: c.stone, marginTop: 2 }}>Shows up on /trucks for real customers to find and order from.</div>
-              </div>
-              <button onClick={() => setListed((l) => !l)} style={{ background: listed ? c.green : "#3A322C", border: "none", borderRadius: 999, width: 44, height: 24, position: "relative", cursor: "pointer", flexShrink: 0, marginLeft: 10 }}>
-                <span style={{ position: "absolute", top: 3, left: listed ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
+            <p style={{ fontSize: 12.5, color: c.stone, marginBottom: 12 }}>
+              {lat != null && lng != null ? `📍 Parked at ${spot || "your pinned spot"}${until ? ` · until ${until}` : ""}` : "📍 Not parked yet"}
+            </p>
+
+            {!locationEditing ? (
+              <button onClick={() => setLocationEditing(true)} style={{ width: "100%", background: "none", border: `1px solid ${c.gold}`, color: c.gold, padding: "10px", borderRadius: 999, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                {lat != null && lng != null ? "Update Location" : "Set Today's Location"}
               </button>
-            </div>
-            <button onClick={async () => { const res = await authedPatch(`trucks?id=eq.${truck.id}`, { is_listed: listed }); if (res.ok) { setInfoSaved(true); reload(); setTimeout(() => setInfoSaved(false), 1800); } }} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-              {infoSaved ? "✓ Saved" : "Save Listing Setting"}
-            </button>
+            ) : (
+              <div style={{ marginTop: 6 }}>
+                <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Where are you parked?</label>
+                <input value={spot} onChange={(e) => setSpot(e.target.value)} placeholder="e.g. Cole Park, by the pier" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 12, fontSize: 14 }} />
+
+                <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Serving until</label>
+                <input value={until} onChange={(e) => setUntil(e.target.value)} placeholder="e.g. 8PM" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
+
+                <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Drop a pin so customers can find you</label>
+                <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
+
+                <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Are you serving right now?</label>
+                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                  <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "OPEN" ? c.green : c.border}`, background: status === "OPEN" ? `${c.green}1F` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
+                  <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "CLOSED" ? c.red : c.border}`, background: status === "CLOSED" ? `${c.red}1F` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
+                </div>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setLocationEditing(false)} style={{ flex: 1, background: "none", border: `1px solid ${c.border}`, color: c.stone, padding: "12px", borderRadius: 999, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                  <button onClick={saveLocation} style={{ flex: 2, background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                    {saved ? <CheckCircle2 size={14} /> : <Send size={14} />} {saved ? "Updated" : "Save Location"}
+                  </button>
+                </div>
+                {saveError && <p style={{ color: c.red, fontSize: 11, marginTop: 8 }}>{saveError}</p>}
+              </div>
+            )}
           </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+            <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "12px 10px", textAlign: "center" }}>
+              <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: c.gold }}>{activeOrders.length}</div>
+              <div style={{ fontSize: 10, color: c.stone, marginTop: 2 }}>Active Orders</div>
+            </div>
+            <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "12px 10px", textAlign: "center" }}>
+              <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: c.gold }}>{todaysOrders.length}</div>
+              <div style={{ fontSize: 10, color: c.stone, marginTop: 2 }}>Orders Today</div>
+            </div>
+            <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "12px 10px", textAlign: "center" }}>
+              <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: c.gold }}>${todaysValue.toFixed(0)}</div>
+              <div style={{ fontSize: 10, color: c.stone, marginTop: 2 }}>Today's Value</div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+            <button onClick={() => setTab("orders")} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 12px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>+ Take Order</button>
+            <button onClick={() => setLocationEditing(true)} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 12px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>📍 Update Location</button>
+            <button onClick={() => setTab("menu")} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 12px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>+ Add Menu Item</button>
+            <button onClick={goSite} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 12px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>👁 View My Site</button>
+          </div>
+
+          <SetupChecklist
+            c={c} truck={truck} theme={themeRow} menu={menu} location={{ ...initialLocation, lat, lng, status }}
+            onGo={(t) => { setTab(t); if (t === "home") setLocationEditing(true); }}
+          />
         </Reveal>
         )}
 
-        {subTab === "location" && (
-        <>
-        <SetupChecklist c={c} truck={truck} theme={themeRow} menu={menu} location={{ ...initialLocation, lat, lng, status }} onGo={setSubTab} />
-
-        {profileOpen && (
-          <LivePreviewFrame
-            truck={truck} theme={themeRow} draft={profileDraft}
-            location={{ ...initialLocation, spot, open_until: until, status, lat, lng }}
-            menu={menu} faqs={faqs}
-          />
-        )}
-        <Collapsible
-          c={c} icon={<Truck size={17} />}
-          title="Your truck details"
-          summary={truck.about_text ? "Name, photo, lettering and your story" : "Name, photo, lettering — add your story"}
-          open={profileOpen} onToggle={setProfileOpen}
-        >
-          <TruckProfilePanel bare c={c} truck={truck} theme={themeRow} session={session} reload={reload} onDraftChange={setProfileDraft} />
-        </Collapsible>
-
-        <Collapsible c={c} icon={<Store size={17} />} title="Kitchen screen PIN" summary="For staff taking orders on a second screen">
-          <KitchenPinPanel bare c={c} truck={truck} session={session} />
-        </Collapsible>
-
-        <Collapsible
-          c={c} icon={<MapPin size={17} />}
-          title="Location"
-          summary={status === "OPEN" ? `Open${spot ? ` — parked at ${spot}` : ""}` : "Closed — update when you're back"}
-        >
-          <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>Update this whenever you move. Customers see it at the top of your site straight away.</p>
-
-          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Where are you parked?</label>
-          <input value={spot} onChange={(e) => setSpot(e.target.value)} placeholder="e.g. Cole Park, by the pier" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 12, fontSize: 14 }} />
-
-          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Serving until</label>
-          <input value={until} onChange={(e) => setUntil(e.target.value)} placeholder="e.g. 8PM" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
-
-          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Drop a pin so customers can find you</label>
-          <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
-
-          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Are you serving right now?</label>
-          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "OPEN" ? c.green : c.border}`, background: status === "OPEN" ? `${c.green}1F` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
-            <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "CLOSED" ? c.red : c.border}`, background: status === "CLOSED" ? `${c.red}1F` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
-          </div>
-
-          <button onClick={saveLocation} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "13px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: `0 6px 18px ${c.gold}40` }}>
-            {saved ? <CheckCircle2 size={14} /> : <Send size={14} />} {saved ? "Updated — live on site now" : "Update Location"}
-          </button>
-          {saveError && <p style={{ color: c.red, fontSize: 11, marginTop: 8 }}>{saveError}</p>}
-        </Collapsible>
-        </>
-        )}
-
-        {subTab === "orders" && (
+        {tab === "orders" && (
         <Reveal delay={50}>
           <div style={{ marginBottom: 18 }}>
             <TakeOrderPanel c={c} truck={truck} menu={menu} session={session} onCreated={(order) => setOrders((prev) => [order, ...prev])} />
             <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>QUEUE</span>
-            <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 12px" }}>Live Orders ({orders.filter((o) => o.status !== "completed").length} active)</h2>
+            <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 12px" }}>Live Orders ({activeOrders.length} active)</h2>
             {orders.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>No orders yet.</p>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {orders.map((o) => (
@@ -3273,45 +3259,15 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
         </Reveal>
         )}
 
-        {subTab === "faqs" && (
+        {tab === "menu" && (
         <Reveal delay={80}>
           <div style={{ marginBottom: 18 }}>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>CHATBOT BRAIN</span>
-            <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 4px" }}>FAQs</h2>
-            <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>Whatever you add here, the site's chatbot knows instantly.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
-              {faqs.map((f) => (
-                <div key={f.id} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                    <div style={{ flex: 1 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>{f.question}</span>
-                      <p style={{ fontSize: 12, color: c.stone, marginTop: 3 }}>{f.answer}</p>
-                    </div>
-                    <button onClick={() => removeFaq(f.id)} style={{ background: "none", border: "none", color: c.stone, cursor: "pointer", flexShrink: 0 }}><Trash2 size={14} /></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ background: c.card, border: `1px dashed #3A322C`, borderRadius: 10, padding: 12 }}>
-              <input value={newQ} onChange={(e) => setNewQ(e.target.value)} placeholder="New question customers ask…" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
-              <textarea value={newA} onChange={(e) => setNewA(e.target.value)} placeholder="Your answer…" rows={2} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8, resize: "vertical" }} />
-              <button onClick={addFaq} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "9px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Add to Chatbot</button>
-            </div>
-          </div>
-        </Reveal>
-        )}
-
-        {subTab === "menu" && (
-        <Reveal delay={140}>
-          <div style={{ marginBottom: 18 }}>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>ADMIN — MENU EDITOR</span>
-            <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 4px" }}>Menu</h2>
-            <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>Full control — price, availability, add or remove items. This list is a live preview of what customers see.</p>
-
-            <DeliverySettingsPanel c={c} truck={truck} session={session} />
+            <p style={{ fontSize: 12.5, color: c.stone, marginBottom: 14, lineHeight: 1.5 }}>Everything you add here shows up on your site straight away. A photo and a short description sell an item far better than a name on its own.</p>
 
             {hasCategories && categories.length > 0 && (
-              <MenuCategoriesPanel c={c} categories={categories} onSave={saveCategory} />
+              <Collapsible c={c} icon={<LayoutDashboard size={17} />} title="Menu categories" summary="Rename your 5 categories or add a caption for each">
+                <MenuCategoriesPanel c={c} categories={categories} onSave={saveCategory} />
+              </Collapsible>
             )}
 
             <div style={{ background: c.card, border: `1px dashed #3A322C`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
@@ -3363,354 +3319,49 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
         </Reveal>
         )}
 
-        {subTab === "branding" && (
-        <>
-        <TemplateSwitcher c={c} truck={truck} session={session} reload={reload} />
-        <ThemeColorsPanel c={c} truck={truck} theme={themeRow} session={session} reload={reload} />
-        <Reveal delay={170}>
-          <div>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>ADMIN — RAW THEME FIELDS</span>
-            <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 4px" }}>Theme Colors</h2>
-            <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>Admin shortcut for the same fields, plus logo upload.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, background: c.card, border: `1px solid #2A2420`, borderRadius: 10, padding: 14 }}>
-              {[
-                ["color_gold", "Accent (Gold)"],
-                ["color_red", "Accent (Red)"],
-                ["color_bg", "Background"],
-                ["color_card", "Card Surface"],
-              ].map(([key, label]) => (
-                <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 12 }}>{label}</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input type="color" value={theme[key]} onChange={(e) => setTheme((s) => ({ ...s, [key]: e.target.value }))} style={{ width: 32, height: 24, border: "none", background: "none", cursor: "pointer" }} />
-                    <span className="mono" style={{ fontSize: 11, color: c.stone }}>{theme[key]}</span>
-                  </div>
-                </div>
-              ))}
-              <button onClick={saveTheme} style={{ background: c.gold, color: "#1A1210", border: "none", padding: "10px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer", marginTop: 6 }}>
-                {themeSaved ? "✓ Saved — refresh site to see it" : "Save Branding"}
-              </button>
-              <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 4, fontSize: 12, color: c.gold, cursor: "pointer", border: `1px dashed #3A322C`, borderRadius: 8, padding: 10 }}>
-                <ImageIcon size={13} /> {uploading === "logo_url" ? "Uploading…" : "Upload Logo"}
-                <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => e.target.files[0] && handleThemePhoto("logo_url", e.target.files[0])} />
-              </label>
-            </div>
-          </div>
-        </Reveal>
-        </>
-        )}
-      </div>
-      </>
-      )}
-    </div>
-  );
-}
-
-/* ============================= OWNER DASHBOARD (restricted — what a real truck owner sees) ============================= */
-function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
-  const { truck, theme, location: initialLocation, menu: initialMenu, faqs: initialFaqs, gallery: initialGallery, categories: initialCategories, loadOrders, reload } = data;
-  const hasCategories = theme?.decoration === "floral";
-  const [categories, setCategories] = useState(initialCategories || []);
-  const [subTab, setSubTab] = useState("location"); // 'location' | 'orders' | 'menu' | 'faqs'
-  const [spot, setSpot] = useState(initialLocation?.spot || "");
-  const [until, setUntil] = useState(initialLocation?.open_until || "");
-  const [status, setStatus] = useState(initialLocation?.status || "OPEN");
-  const [lat, setLat] = useState(initialLocation?.lat ?? null);
-  const [lng, setLng] = useState(initialLocation?.lng ?? null);
-  const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [profileDraft, setProfileDraft] = useState(null);
-  const [menu, setMenu] = useState(initialMenu);
-  const [faqs, setFaqs] = useState(initialFaqs);
-  const [gallery, setGallery] = useState(initialGallery);
-  const [orders, setOrders] = useState([]);
-  const [newQ, setNewQ] = useState("");
-  const [newA, setNewA] = useState("");
-  const [newItem, setNewItem] = useState({ name: "", price: "", description: "", photoFile: null, photoPreview: null });
-  const [newItemError, setNewItemError] = useState("");
-  const [addingItem, setAddingItem] = useState(false);
-  const [uploading, setUploading] = useState("");
-
-  useEffect(() => { loadOrders(truck.id, session.access_token).then(setOrders); }, [truck.id, session.access_token, loadOrders]);
-
-  const authedPatch = (path, body) => authedRest(path, { method: "PATCH", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
-  const authedPost = (path, body) => authedRest(path, { method: "POST", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
-  const authedDelete = (path) => authedRest(path, { method: "DELETE", token: session.access_token, prefer: "return=minimal" });
-
-  const updatePrice = async (item, newPrice) => {
-    const price = Number(newPrice);
-    if (isNaN(price) || price < 0) return;
-    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, price } : m)));
-    await authedPatch(`menu_items?id=eq.${item.id}`, { price });
-  };
-
-  const addMenuItem = async () => {
-    setNewItemError("");
-    if (!newItem.name.trim() || !newItem.price) { setNewItemError("Name and price are required."); return; }
-    setAddingItem(true);
-    // finally-guarded: a thrown fetch used to leave addingItem stuck true,
-    // which disabled this button permanently until a page refresh.
-    try {
-      const res = await authedPost(`menu_items`, {
-        truck_id: truck.id, name: newItem.name.trim(), description: newItem.description.trim(),
-        price: Number(newItem.price), sort_order: menu.length + 1,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setNewItemError(err.message || `Could not add item (${res.status}).`);
-        return;
-      }
-      const [created] = await res.json();
-      let finalItem = created;
-      if (newItem.photoFile) {
-        try {
-          const url = await uploadPhoto(newItem.photoFile, `trucks/${truck.id}/menu/${created.id}-${Date.now()}.${newItem.photoFile.name.split(".").pop()}`, session.access_token);
-          await authedPatch(`menu_items?id=eq.${created.id}`, { photo_url: url });
-          finalItem = { ...created, photo_url: url };
-        } catch (e) { setNewItemError(`Item added, but photo upload failed: ${e.message}`); }
-      }
-      setMenu((prev) => [...prev, finalItem]);
-      setNewItem({ name: "", price: "", description: "", photoFile: null, photoPreview: null });
-    } catch (e) {
-      setNewItemError(`Could not add item — ${e.message}. Check your connection and try again.`);
-    } finally {
-      setAddingItem(false);
-    }
-  };
-
-  const deleteMenuItem = async (id) => {
-    setMenu((prev) => prev.filter((m) => m.id !== id));
-    await authedDelete(`menu_items?id=eq.${id}`);
-  };
-
-  const handleMenuPhoto = async (item, file) => {
-    setUploading(item.id);
-    try {
-      const url = await uploadPhoto(file, `trucks/${truck.id}/menu/${item.id}-${Date.now()}.${file.name.split(".").pop()}`, session.access_token);
-      const res = await authedPatch(`menu_items?id=eq.${item.id}`, { photo_url: url });
-      if (!res.ok) throw new Error("Couldn't attach photo to item");
-      setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, photo_url: url } : m)));
-    } catch (e) { alert(e.message); }
-    setUploading("");
-  };
-
-  const handleGalleryUpload = async (file) => {
-    setUploading("gallery");
-    try {
-      const url = await uploadPhoto(file, `trucks/${truck.id}/gallery/${Date.now()}.${file.name.split(".").pop()}`, session.access_token);
-      const res = await authedPost(`gallery_photos`, { truck_id: truck.id, photo_url: url, sort_order: gallery.length + 1 });
-      if (res.ok) { const created = await res.json(); setGallery((prev) => [...prev, ...created]); }
-    } catch (e) { alert(e.message); }
-    setUploading("");
-  };
-
-  const deleteGalleryPhoto = async (id) => {
-    setGallery((prev) => prev.filter((g) => g.id !== id));
-    await authedDelete(`gallery_photos?id=eq.${id}`);
-  };
-
-  const statusStyle = { new: c.red, preparing: c.gold, ready: c.green, completed: c.stone };
-  const statusLabel = { new: "NEW", preparing: "PREPARING", ready: "READY", completed: "COMPLETED" };
-  const nextStatus = { new: "preparing", preparing: "ready", ready: "completed" };
-
-  const advanceOrder = async (order) => {
-    const next = nextStatus[order.status];
-    if (!next) return;
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: next } : o)));
-    await authedPatch(`orders?id=eq.${order.id}`, { status: next });
-  };
-
-  const saveLocation = async () => {
-    setSaveError("");
-    try {
-      const res = await authedPatch(`truck_location?truck_id=eq.${truck.id}`, { spot, open_until: until, status, lat, lng });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setSaveError(err.message || `Update failed (${res.status}) — try signing out and back in.`);
-        return;
-      }
-      // A PATCH that matches no row still returns 200 with an empty body,
-      // so an absent truck_location row would otherwise look like a save.
-      const rows = await res.json().catch(() => null);
-      if (Array.isArray(rows) && rows.length === 0) {
-        setSaveError("Nothing was saved — this truck has no location record yet. Contact support.");
-        return;
-      }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1800);
-    } catch (e) {
-      setSaveError(`Update failed — ${e.message}. Check your connection and try again.`);
-    }
-  };
-
-  const toggleSoldOut = async (item) => {
-    const next = !item.sold_out;
-    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, sold_out: next } : m)));
-    await authedPatch(`menu_items?id=eq.${item.id}`, { sold_out: next });
-  };
-
-  const setPromoTag = async (item, tag) => {
-    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, promo_tag: tag } : m)));
-    await authedPatch(`menu_items?id=eq.${item.id}`, { promo_tag: tag });
-  };
-  const setPromoNote = async (item, note) => {
-    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, promo_note: note } : m)));
-    await authedPatch(`menu_items?id=eq.${item.id}`, { promo_note: note });
-  };
-
-  const setItemCategory = async (item, categoryId) => {
-    setMenu((prev) => prev.map((m) => (m.id === item.id ? { ...m, category_id: categoryId } : m)));
-    await authedPatch(`menu_items?id=eq.${item.id}`, { category_id: categoryId });
-  };
-  const saveCategory = async (id, draft) => {
-    setCategories((prev) => prev.map((cat) => (cat.id === id ? { ...cat, ...draft } : cat)));
-    await authedPatch(`menu_categories?id=eq.${id}`, { name: draft.name, caption: draft.caption || null });
-  };
-
-  const addFaq = async () => {
-    if (!newQ.trim() || !newA.trim()) return;
-    const res = await authedPost(`faqs`, { truck_id: truck.id, question: newQ.trim(), answer: newA.trim() });
-    if (res.ok) { const created = await res.json(); setFaqs((prev) => [...prev, ...created]); setNewQ(""); setNewA(""); }
-  };
-  const removeFaq = async (id) => {
-    setFaqs((prev) => prev.filter((f) => f.id !== id));
-    await authedDelete(`faqs?id=eq.${id}`);
-  };
-
-  return (
-    <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=Alex+Brush&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&display=swap');
-        .mono { font-family: 'JetBrains Mono', monospace; } .display { font-family: 'Oswald', sans-serif; text-transform: uppercase; } .scrollx::-webkit-scrollbar { display: none; }
-      `}</style>
-      <nav style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(14,11,9,0.95)", borderBottom: `1px solid #2A2420`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <button onClick={goSite} style={{ background: "none", border: "none", color: c.stone, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>View Website →</button>
-        <span className="mono" style={{ fontSize: 12, color: c.gold, letterSpacing: 1 }}>{truck.name} — Owner</span>
-        <button onClick={onLogout} style={{ background: "none", border: "none", color: c.stone, cursor: "pointer" }}><LogOut size={16} /></button>
-      </nav>
-
-      <div style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid #2A2420`, background: "#0A0807" }}>
-        {[["location", "Profile"], ["menu", "Menu"], ["branding", "Design"], ["orders", "Orders"], ["loyalty", "Rewards"], ["faqs", "Questions"]].map(([key, label]) => (
-          <button key={key} onClick={() => setSubTab(key)} style={{ padding: "10px 16px", background: "none", border: "none", borderBottom: subTab === key ? `2px solid ${c.gold}` : "2px solid transparent", color: subTab === key ? c.gold : c.stone, fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
-        ))}
-      </div>
-
-      <div style={{ padding: "20px" }}>
-        {subTab === "loyalty" && (
-          <LoyaltyPanel c={c} truck={truck} session={session} />
-        )}
-
-        {subTab === "branding" && (
-        <Reveal>
-          <div>
-            <p style={{ fontSize: 12.5, color: c.stone, marginBottom: 14, lineHeight: 1.5 }}>Most trucks just pick a style and leave it. Open a section below only if you want to change something.</p>
-            <Collapsible c={c} icon={<LayoutDashboard size={17} />} title="Change your style" summary="Colors, layout and lettering in one tap" defaultOpen>
-              <TemplateSwitcher c={c} truck={truck} theme={theme} session={session} reload={reload} />
-            </Collapsible>
-            <Collapsible c={c} icon={<Palette size={17} />} title="Fine-tune colors" summary="Optional — set your own background, accent and text colors">
-              <ThemeColorsPanel c={c} truck={truck} theme={theme} session={session} reload={reload} />
-            </Collapsible>
-          </div>
-        </Reveal>
-        )}
-
-        {subTab === "location" && (
-        <>
-        <SetupChecklist c={c} truck={truck} theme={theme} menu={menu} location={{ ...initialLocation, lat, lng, status }} onGo={setSubTab} />
-
-        {profileOpen && (
-          <LivePreviewFrame
-            truck={truck} theme={theme} draft={profileDraft}
-            location={{ ...initialLocation, spot, open_until: until, status, lat, lng }}
-            menu={menu} faqs={faqs}
-          />
-        )}
-        <Collapsible
-          c={c} icon={<Truck size={17} />}
-          title="Your truck details"
-          summary={truck.about_text ? "Name, photo, lettering and your story" : "Name, photo, lettering — add your story"}
-          open={profileOpen} onToggle={setProfileOpen}
-        >
-          <TruckProfilePanel bare c={c} truck={truck} theme={theme} session={session} reload={reload} onDraftChange={setProfileDraft} />
-        </Collapsible>
-
-        <Collapsible c={c} icon={<Store size={17} />} title="Kitchen screen PIN" summary="For staff taking orders on a second screen">
-          <KitchenPinPanel bare c={c} truck={truck} session={session} />
-        </Collapsible>
-
-        {/* Last in the stack now that it's collapsible like the other two —
-            still just one tap away from the top of the page. */}
-        <Collapsible
-          c={c} icon={<MapPin size={17} />}
-          title="Location"
-          summary={status === "OPEN" ? `Open${spot ? ` — parked at ${spot}` : ""}` : "Closed — update when you're back"}
-        >
-          <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>Update this whenever you move. Customers see it at the top of your site straight away.</p>
-
-          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Where are you parked?</label>
-          <input value={spot} onChange={(e) => setSpot(e.target.value)} placeholder="e.g. Cole Park, by the pier" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 12, fontSize: 14 }} />
-
-          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Serving until</label>
-          <input value={until} onChange={(e) => setUntil(e.target.value)} placeholder="e.g. 8PM" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
-
-          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Drop a pin so customers can find you</label>
-          <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
-
-          <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Are you serving right now?</label>
-          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "OPEN" ? c.green : c.border}`, background: status === "OPEN" ? `${c.green}1F` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
-            <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "CLOSED" ? c.red : c.border}`, background: status === "CLOSED" ? `${c.red}1F` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
-          </div>
-
-          <button onClick={saveLocation} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "13px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: `0 6px 18px ${c.gold}40` }}>
-            {saved ? <CheckCircle2 size={14} /> : <Send size={14} />} {saved ? "Updated — live on site now" : "Update Location"}
-          </button>
-          {saveError && <p style={{ color: c.red, fontSize: 11, marginTop: 8 }}>{saveError}</p>}
-        </Collapsible>
-        </>
-        )}
-
-        {subTab === "orders" && (
-        <Reveal delay={50}>
-          <div style={{ marginBottom: 18 }}>
-            <TakeOrderPanel c={c} truck={truck} menu={menu} session={session} onCreated={(order) => setOrders((prev) => [order, ...prev])} />
-            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>QUEUE</span>
-            <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 12px" }}>Live Orders ({orders.filter((o) => o.status !== "completed").length} active)</h2>
-            {orders.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>No orders yet.</p>}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {orders.map((o) => (
-                <div key={o.id} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                    <div>
-                      <span style={{ fontWeight: 700, fontSize: 14 }}>{o.customer_name}</span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                        {o.fulfillment === "pickup" ? <Store size={11} color={c.stone} /> : <Truck size={11} color={c.stone} />}
-                        <span className="mono" style={{ fontSize: 10, color: c.stone }}>{o.fulfillment?.toUpperCase()} · {new Date(o.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
-                      </div>
-                    </div>
-                    <span className="mono" style={{ color: c.gold, fontWeight: 700, fontSize: 13 }}>${Number(o.total).toFixed(2)}</span>
-                  </div>
-                  <p style={{ fontSize: 12, color: c.stone, marginBottom: 10 }}>{(o.items || []).map((i) => `${i.qty}x ${i.name}`).join(", ")}</p>
-                  <button onClick={() => advanceOrder(o)} disabled={o.status === "completed"} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${statusStyle[o.status]}`, color: statusStyle[o.status], padding: "6px 12px", borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: o.status === "completed" ? "default" : "pointer" }}>
-                    {o.status === "completed" ? <CheckCircle2 size={12} /> : <Circle size={12} />} {statusLabel[o.status]} {o.status !== "completed" && "— tap to advance"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Reveal>
-        )}
-
-        {subTab === "faqs" && (
+        {tab === "website" && (
         <Reveal delay={80}>
-          <div style={{ marginBottom: 18 }}>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>CHATBOT BRAIN</span>
-            <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 4px" }}>FAQs</h2>
-            <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>Whatever you add here, the site's chatbot knows instantly.</p>
+          <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 16, marginBottom: 18, textAlign: "center" }}>
+            <p style={{ fontSize: 11, color: c.green, fontWeight: 700, marginBottom: 6 }}>● YOUR SITE IS LIVE</p>
+            <p className="mono" style={{ fontSize: 12, color: c.gold, marginBottom: 14 }}>{siteUrlDisplay}</p>
+            <div style={{ background: "#fff", borderRadius: 12, padding: 12, display: "inline-block", marginBottom: 12 }}>
+              <QRCodeCanvas id="dash-qr" value={fullSiteUrl} size={110} fgColor="#0A0A0A" bgColor="#ffffff" />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={goSite} style={{ flex: 1, background: c.gold, color: "#1A1210", border: "none", padding: "10px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>View Site</button>
+              <button onClick={copyLink} style={{ flex: 1, background: "none", border: `1px solid #3A322C`, color: c.cream, padding: "10px", borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Copy Link</button>
+              <button onClick={downloadQR} style={{ flex: 1, background: "none", border: `1px solid #3A322C`, color: c.cream, padding: "10px", borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Download QR</button>
+            </div>
+          </div>
+
+          <p style={{ fontSize: 11.5, color: c.stone, marginBottom: 12 }}>Everything below changes what customers see on your site.</p>
+
+          <Collapsible c={c} icon={<LayoutDashboard size={17} />} title="Change your style" summary="Colors, layout and lettering in one tap">
+            <TemplateSwitcher c={c} truck={truck} theme={themeRow} session={session} reload={reload} />
+          </Collapsible>
+          <Collapsible c={c} icon={<Palette size={17} />} title="Fine-tune colors" summary="Optional — set your own background, accent and text colors">
+            <ThemeColorsPanel c={c} truck={truck} theme={themeRow} session={session} reload={reload} />
+          </Collapsible>
+
+          {profileOpen && (
+            <LivePreviewFrame
+              truck={truck} theme={themeRow} draft={profileDraft}
+              location={{ ...initialLocation, spot, open_until: until, status, lat, lng }}
+              menu={menu} faqs={faqs}
+            />
+          )}
+          <Collapsible
+            c={c} icon={<Truck size={17} />} title="About your truck"
+            summary={truck.about_text ? "Name, photo, lettering and your story" : "Name, photo, lettering — add your story"}
+            open={profileOpen} onToggle={setProfileOpen}
+          >
+            <TruckProfilePanel bare c={c} truck={truck} theme={themeRow} session={session} reload={reload} onDraftChange={setProfileDraft} />
+          </Collapsible>
+
+          <Collapsible c={c} icon={<MessageCircle size={17} />} title="Customer questions" summary="Whatever you add here, your site's chatbot knows instantly">
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
               {faqs.map((f) => (
-                <div key={f.id} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px" }}>
+                <div key={f.id} style={{ background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                     <div style={{ flex: 1 }}>
                       <span style={{ fontSize: 12.5, fontWeight: 700 }}>{f.question}</span>
@@ -3721,81 +3372,62 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
                 </div>
               ))}
             </div>
-            <div style={{ background: c.card, border: `1px dashed #3A322C`, borderRadius: 10, padding: 12 }}>
-              <input value={newQ} onChange={(e) => setNewQ(e.target.value)} placeholder="New question customers ask…" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
-              <textarea value={newA} onChange={(e) => setNewA(e.target.value)} placeholder="Your answer…" rows={2} style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8, resize: "vertical" }} />
+            <div style={{ background: c.bg, border: `1px dashed #3A322C`, borderRadius: 10, padding: 12 }}>
+              <input value={newQ} onChange={(e) => setNewQ(e.target.value)} placeholder="New question customers ask…" style={{ width: "100%", background: c.card, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+              <textarea value={newA} onChange={(e) => setNewA(e.target.value)} placeholder="Your answer…" rows={2} style={{ width: "100%", background: c.card, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8, resize: "vertical" }} />
               <button onClick={addFaq} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "9px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Add to Chatbot</button>
             </div>
-          </div>
+          </Collapsible>
         </Reveal>
         )}
 
-        {subTab === "menu" && (
-        <Reveal delay={110}>
-          <div style={{ marginBottom: 18 }}>
-            <p style={{ fontSize: 12.5, color: c.stone, marginBottom: 14, lineHeight: 1.5 }}>Everything you add here shows up on your site straight away. A photo and a short description sell an item far better than a name on its own.</p>
+        {tab === "more" && (
+        <Reveal delay={80}>
+          <Collapsible c={c} icon={<Store size={17} />} title="Kitchen screen PIN" summary="For staff taking orders on a second screen">
+            <KitchenPinPanel bare c={c} truck={truck} session={session} />
+          </Collapsible>
+          <Collapsible c={c} icon={<Truck size={17} />} title="Delivery settings" summary="Optional — set a delivery fee and how far you'll go">
+            <DeliverySettingsPanel bare c={c} truck={truck} session={session} />
+          </Collapsible>
+          <Collapsible c={c} icon={<span style={{ fontSize: 15 }}>🎁</span>} title="Rewards" summary="Set up a loyalty points program for repeat customers">
+            <LoyaltyPanel c={c} truck={truck} session={session} />
+          </Collapsible>
 
-            <Collapsible c={c} icon={<Truck size={17} />} title="Delivery settings" summary="Optional — set a delivery fee and how far you'll go">
-              <DeliverySettingsPanel bare c={c} truck={truck} session={session} />
-            </Collapsible>
-
-            {hasCategories && categories.length > 0 && (
-              <Collapsible c={c} icon={<LayoutDashboard size={17} />} title="Menu categories" summary="Rename your 5 categories or add a caption for each">
-                <MenuCategoriesPanel c={c} categories={categories} onSave={saveCategory} />
-              </Collapsible>
-            )}
-
-            <div style={{ background: c.card, border: `1px dashed #3A322C`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
-              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, height: 100, border: `1px dashed #3A322C`, borderRadius: 10, marginBottom: 10, cursor: "pointer", overflow: "hidden", background: newItem.photoPreview ? `url(${newItem.photoPreview}) center/cover` : "transparent" }}>
-                {!newItem.photoPreview && <><ImageIcon size={20} color={c.stone} /><span style={{ fontSize: 11, color: c.stone }}>Add a photo</span></>}
-                <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => e.target.files[0] && setNewItem((s) => ({ ...s, photoFile: e.target.files[0], photoPreview: URL.createObjectURL(e.target.files[0]) }))} />
-              </label>
-              <input value={newItem.name} onChange={(e) => setNewItem((s) => ({ ...s, name: e.target.value }))} placeholder="Item name…" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
-              <input value={newItem.description} onChange={(e) => setNewItem((s) => ({ ...s, description: e.target.value }))} placeholder="Description…" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
-              <input value={newItem.price} onChange={(e) => setNewItem((s) => ({ ...s, price: e.target.value }))} type="number" step="0.01" placeholder="Price" style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
-              {newItemError && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{newItemError}</p>}
-              <button onClick={addMenuItem} disabled={addingItem} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "10px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer", opacity: addingItem ? 0.6 : 1 }}>
-                {addingItem ? "Adding…" : "+ Add to Menu"}
-              </button>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {menu.length === 0 && <p style={{ fontSize: 12, color: c.stone, textAlign: "center", padding: 20 }}>No items yet — add your first one above.</p>}
-              {menu.map((item) => (
-                <div key={item.id} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: 12, display: "flex", gap: 12 }}>
-                  <label style={{ width: 56, height: 56, borderRadius: 8, flexShrink: 0, cursor: "pointer", overflow: "hidden", background: item.photo_url ? `url(${item.photo_url}) center/cover` : "#0E0B09", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {!item.photo_url && <ImageIcon size={16} color={c.stone} />}
-                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => e.target.files[0] && handleMenuPhoto(item, e.target.files[0])} />
-                  </label>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <span className="mono" style={{ fontSize: 9, color: c.stone, letterSpacing: 1 }}>ITEM</span>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 13, fontWeight: 700 }}>{item.name}</span>
-                      <button onClick={() => deleteMenuItem(item.id)} style={{ background: "none", border: "none", color: c.stone, cursor: "pointer", flexShrink: 0 }}><Trash2 size={13} /></button>
-                    </div>
-                    {item.description && <p style={{ fontSize: 11, color: c.stone, margin: "2px 0 6px", lineHeight: 1.3 }}>{item.description}</p>}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span className="mono" style={{ fontSize: 11, color: c.stone }}>$</span>
-                      <input type="number" step="0.01" defaultValue={item.price} onBlur={(e) => updatePrice(item, e.target.value)} style={{ width: 60, background: c.bg, border: `1px solid #2A2420`, borderRadius: 6, padding: "4px 6px", color: c.cream, fontSize: 11 }} />
-                      <button onClick={() => toggleSoldOut(item)} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: item.sold_out ? c.red : c.green, cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
-                        {item.sold_out ? <><EyeOff size={11} /> SOLD OUT</> : <><Eye size={11} /> AVAILABLE</>}
-                      </button>
-                    </div>
-                    <PromoTagPicker c={c} item={item} onSetTag={setPromoTag} onSetNote={setPromoNote} />
-                    {hasCategories && categories.length > 0 && (
-                      <CategoryPicker c={c} item={item} categories={categories} onSetCategory={setItemCategory} />
-                    )}
+          {isAdmin && (
+            <>
+              <Collapsible c={c} icon={<Store size={17} />} title="Marketplace listing" summary="Shows up on /trucks for real customers to find and order from">
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 600 }}>Public Marketplace Listing</div>
+                    <div style={{ fontSize: 10, color: c.stone, marginTop: 2 }}>Shows up on /trucks for real customers to find and order from.</div>
                   </div>
+                  <button onClick={() => setListed((l) => !l)} style={{ background: listed ? c.green : "#3A322C", border: "none", borderRadius: 999, width: 44, height: 24, position: "relative", cursor: "pointer", flexShrink: 0, marginLeft: 10 }}>
+                    <span style={{ position: "absolute", top: 3, left: listed ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
+                  </button>
                 </div>
-              ))}
-            </div>
-          </div>
+                <button
+                  onClick={async () => { const res = await authedPatch(`trucks?id=eq.${truck.id}`, { is_listed: listed }); if (res.ok) { setListedSaved(true); reload(); setTimeout(() => setListedSaved(false), 1800); } }}
+                  style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                >
+                  {listedSaved ? "✓ Saved" : "Save Listing Setting"}
+                </button>
+              </Collapsible>
+              <button onClick={() => setView("trucks")} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 16px", color: c.cream, fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 12 }}>
+                All Trucks <ArrowRight size={15} />
+              </button>
+            </>
+          )}
+
+          <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "none", border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 16px", color: c.stone, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+            <LogOut size={14} /> Log Out
+          </button>
         </Reveal>
         )}
       </div>
     </div>
   );
 }
+
 function TrucksManager({ c, session, currentTruckId }) {
   const [trucks, setTrucks] = useState([]);
   const [loading, setLoading] = useState(true);
