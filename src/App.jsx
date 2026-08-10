@@ -2777,6 +2777,100 @@ function KitchenPinPanel({ c, truck, session, bare }) {
   );
 }
 
+// Lets the owner ring up a walk-up order themselves: tap items off their own
+// menu, name the customer, submit — it lands in the same orders table (and
+// Live Orders queue / kitchen screen) as an online order would.
+function TakeOrderPanel({ c, truck, menu, session, onCreated }) {
+  const [cart, setCart] = useState({}); // { menu_item_id: qty }
+  const [customerName, setCustomerName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const available = menu.filter((m) => !m.sold_out);
+  const cartEntries = Object.entries(cart).filter(([, qty]) => qty > 0);
+  const total = cartEntries.reduce((sum, [id, qty]) => {
+    const item = menu.find((m) => m.id === id);
+    return sum + (item ? item.price * qty : 0);
+  }, 0);
+
+  const bump = (id, delta) => setCart((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }));
+
+  const submit = async () => {
+    if (cartEntries.length === 0) { setError("Add at least one item."); return; }
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await authedFn("owner-create-order", {
+        slug: truck.slug,
+        customer_name: customerName.trim(),
+        items: cartEntries.map(([menu_item_id, qty]) => ({ menu_item_id, qty })),
+      }, session.access_token);
+      if (res.error) { setError(res.error); return; }
+      onCreated(res.order);
+      setCart({});
+      setCustomerName("");
+    } catch (e) {
+      setError(`Could not place order — ${e.message}.`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 16, marginBottom: 18 }}>
+      <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Take an Order</h3>
+      {available.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>Add menu items first to take an order.</p>}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: cartEntries.length ? 14 : 0 }}>
+        {available.map((item) => (
+          <button
+            key={item.id} onClick={() => bump(item.id, 1)}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "#1A1512", border: "1px solid #2A2420", borderRadius: 999, padding: "8px 12px", color: c.cream, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+          >
+            <Plus size={12} color={c.gold} /> {item.name} <span style={{ color: c.stone }}>${Number(item.price).toFixed(2)}</span>
+            {cart[item.id] > 0 && <span style={{ background: c.gold, color: "#1A1210", borderRadius: 999, padding: "1px 7px", fontSize: 11, fontWeight: 800 }}>{cart[item.id]}</span>}
+          </button>
+        ))}
+      </div>
+
+      {cartEntries.length > 0 && (
+        <div style={{ borderTop: "1px dashed #3A322C", paddingTop: 12, marginBottom: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          {cartEntries.map(([id, qty]) => {
+            const item = menu.find((m) => m.id === id);
+            if (!item) return null;
+            return (
+              <div key={id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                <span>{item.name}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button onClick={() => bump(id, -1)} style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid #3A322C", borderRadius: 6, width: 22, height: 22, color: c.cream, cursor: "pointer" }}><Minus size={12} /></button>
+                  <span className="mono" style={{ minWidth: 16, textAlign: "center" }}>{qty}</span>
+                  <button onClick={() => bump(id, 1)} style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid #3A322C", borderRadius: 6, width: 22, height: 22, color: c.cream, cursor: "pointer" }}><Plus size={12} /></button>
+                  <span className="mono" style={{ color: c.gold, minWidth: 52, textAlign: "right" }}>${(item.price * qty).toFixed(2)}</span>
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 14, marginTop: 4 }}>
+            <span>Total</span><span style={{ color: c.gold }}>${total.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+
+      <input
+        value={customerName} onChange={(e) => setCustomerName(e.target.value)}
+        placeholder="Customer name"
+        style={{ width: "100%", background: "#1A1512", border: "1px solid #2A2420", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 10 }}
+      />
+      {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
+      <button
+        onClick={submit} disabled={submitting || cartEntries.length === 0}
+        style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 800, fontSize: 13, cursor: cartEntries.length === 0 ? "default" : "pointer", opacity: cartEntries.length === 0 ? 0.5 : 1 }}
+      >
+        {submitting ? "Placing…" : `Place Order${cartEntries.length ? ` — $${total.toFixed(2)}` : ""}`}
+      </button>
+    </div>
+  );
+}
+
 function DashboardContent({ c, data, session, onLogout, goSite }) {
   const { truck, theme: themeRow, location: initialLocation, menu: initialMenu, faqs: initialFaqs, gallery: initialGallery, categories: initialCategories, loadOrders, reload } = data;
   const hasCategories = themeRow?.decoration === "floral";
@@ -3110,6 +3204,7 @@ function DashboardContent({ c, data, session, onLogout, goSite }) {
         {subTab === "orders" && (
         <Reveal delay={50}>
           <div style={{ marginBottom: 18 }}>
+            <TakeOrderPanel c={c} truck={truck} menu={menu} session={session} onCreated={(order) => setOrders((prev) => [order, ...prev])} />
             <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>QUEUE</span>
             <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 12px" }}>Live Orders ({orders.filter((o) => o.status !== "completed").length} active)</h2>
             {orders.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>No orders yet.</p>}
@@ -3538,6 +3633,7 @@ function OwnerDashboardLite({ c, data, session, onLogout, goSite }) {
         {subTab === "orders" && (
         <Reveal delay={50}>
           <div style={{ marginBottom: 18 }}>
+            <TakeOrderPanel c={c} truck={truck} menu={menu} session={session} onCreated={(order) => setOrders((prev) => [order, ...prev])} />
             <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>QUEUE</span>
             <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 12px" }}>Live Orders ({orders.filter((o) => o.status !== "completed").length} active)</h2>
             {orders.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>No orders yet.</p>}
