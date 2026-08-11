@@ -1636,6 +1636,7 @@ function CustomerSite({ c, data, demoMode }) {
         </div>
         <div className="checker" style={{ height: 4, borderRadius: 2, marginTop: 24, opacity: 0.5 }} />
         <p className="mono" style={{ fontSize: 10, color: c.footerMuted, marginTop: 16 }}>© {new Date().getFullYear()} {truck.name}. Built with pride in Corpus Christi.</p>
+        <a href="/" className="mono" style={{ display: "inline-block", marginTop: 8, fontSize: 10, fontWeight: 700, color: "#2FBFD4", textDecoration: "none", letterSpacing: 0.5 }}>Powered by VendorGrub</a>
       </footer>
 
       {cartCount > 0 && !checkoutOpen && (
@@ -3165,7 +3166,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
       `}</style>
 
       <nav style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(14,11,9,0.95)", borderBottom: `1px solid #2A2420`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <button onClick={goSite} style={{ background: "none", border: "none", color: c.stone, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>View Website →</button>
+        <button onClick={goSite} className="display" style={{ background: "none", border: "none", color: c.gold, cursor: "pointer", fontSize: 14, letterSpacing: 0.5 }}>VendorGrub</button>
         <span className="mono" style={{ fontSize: 12, color: c.gold, letterSpacing: 1 }}>{isAdmin ? session.email : `${truck.name} — Owner`}</span>
         <button onClick={onLogout} style={{ background: "none", border: "none", color: c.stone, cursor: "pointer" }}><LogOut size={16} /></button>
       </nav>
