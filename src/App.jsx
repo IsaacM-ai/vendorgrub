@@ -2182,6 +2182,10 @@ function OwnerLogin() {
 // can never visually drift from the actual site because it is the actual
 // site. demoMode keeps taps (including "Add to Order") safe: real cart and
 // checkout UI work, nothing is ever actually submitted.
+// Renders the real CustomerSite component at phone width inside a mock
+// iPhone bezel -- not an iframe of the deployed site, the actual live
+// component with the owner's current (and unsaved draft) data, so editing
+// elsewhere on this page updates what's "on screen" here instantly.
 function LivePreviewFrame({ truck, theme, location, menu, faqs, draft }) {
   const previewTruck = draft ? { ...truck, name: draft.name, tagline: draft.tagline, subline: draft.subline, phone: draft.phone } : truck;
   const previewTheme = draft ? { ...theme, font_key: draft.fontKey, hero_photo_url: draft.heroPreview } : theme;
@@ -2190,17 +2194,23 @@ function LivePreviewFrame({ truck, theme, location, menu, faqs, draft }) {
 
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 2px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, padding: "0 2px" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#8B8B8B", letterSpacing: 1 }}>
           <span className="hud-dot" style={{ width: 6, height: 6, borderRadius: "50%", background: "#4CA466", display: "inline-block" }} />
-          LIVE PREVIEW
+          MOBILE PREVIEW
         </span>
         <a href={`/${truck.slug}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#2FBFD4", textDecoration: "none", fontWeight: 600 }}>View full size ↗</a>
       </div>
-      <div style={{ border: "3px solid #1C1C1C", borderRadius: 24, overflow: "hidden", height: 520, background: "#000" }}>
-        <style>{`@keyframes livePreviewPulse { 0%,100%{opacity:1} 50%{opacity:0.35} } .hud-dot { animation: livePreviewPulse 1.6s ease-in-out infinite; }`}</style>
-        <div style={{ height: "100%", overflowY: "auto" }}>
-          <CustomerSite c={previewColors} data={previewData} demoMode />
+      <style>{`@keyframes livePreviewPulse { 0%,100%{opacity:1} 50%{opacity:0.35} } .hud-dot { animation: livePreviewPulse 1.6s ease-in-out infinite; }`}</style>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <div style={{ width: 300, background: "#0A0A0A", borderRadius: 46, padding: "16px 10px", boxShadow: "0 24px 60px rgba(0,0,0,0.5), inset 0 0 0 2px #2A2A2A", position: "relative" }}>
+          <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", width: 120, height: 26, background: "#000", borderRadius: 14, zIndex: 2 }} />
+          <div style={{ borderRadius: 32, overflow: "hidden", height: 600, background: "#000" }}>
+            <div style={{ height: "100%", overflowY: "auto" }}>
+              <CustomerSite c={previewColors} data={previewData} demoMode />
+            </div>
+          </div>
+          <div style={{ position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)", width: 110, height: 4, background: "#3A3A3A", borderRadius: 999 }} />
         </div>
       </div>
     </div>
@@ -2553,10 +2563,11 @@ function SetupChecklist({ c, truck, theme, menu, location, onGo }) {
   if (done === steps.length) return null;
 
   const readyToOpen = required.every((s) => s.done);
+  const glass = { background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)" };
 
   if (readyToOpen) {
     return (
-      <div style={{ background: c.card, border: `1px solid ${c.green}77`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+      <div style={{ ...glass, border: `1px solid ${hexAlpha(c.green, 0.45)}`, borderRadius: 18, padding: 16, marginBottom: 16, boxShadow: `0 8px 30px rgba(0,0,0,0.3), inset 0 1px 0 ${hexAlpha(c.cream, 0.05)}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
           <span style={{ fontSize: 17 }}>🚀</span>
           <span style={{ fontWeight: 700, fontSize: 13.5 }}>You're ready to open</span>
@@ -2582,7 +2593,7 @@ function SetupChecklist({ c, truck, theme, menu, location, onGo }) {
 
   const next = steps.find((s) => !s.done);
   return (
-    <div style={{ background: c.card, border: `1px solid ${c.gold}55`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+    <div style={{ ...glass, border: `1px solid ${hexAlpha(c.gold, 0.35)}`, borderRadius: 18, padding: 16, marginBottom: 16, boxShadow: `0 8px 30px rgba(0,0,0,0.3), inset 0 1px 0 ${hexAlpha(c.cream, 0.05)}` }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
         <span style={{ fontWeight: 700, fontSize: 13.5 }}>Finish setting up</span>
         <span className="mono" style={{ fontSize: 11, color: c.stone }}>{done} of {steps.length}</span>
@@ -2917,6 +2928,18 @@ function greeting() {
   return "Good evening";
 }
 
+// Glass-panel surfaces (Home tab) need a translucent version of whatever
+// hex color the truck's theme provides, not a fixed one -- this is the
+// hex -> rgba(...) conversion that makes that possible.
+function hexAlpha(hex, a) {
+  const h = (hex || "#000000").replace("#", "");
+  const full = h.length === 3 ? h.split("").map((ch) => ch + ch).join("") : h;
+  const r = parseInt(full.slice(0, 2), 16) || 0;
+  const g = parseInt(full.slice(2, 4), 16) || 0;
+  const b = parseInt(full.slice(4, 6), 16) || 0;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 /* ============================= OWNER DASHBOARD SHELL =============================
    One shared dashboard for both admin-owned trucks and regular owners --
    they used to be two near-identical ~500-line components that only really
@@ -3148,7 +3171,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
       </nav>
 
       <div style={{ display: "flex", borderBottom: `1px solid #2A2420`, background: "#0A0807" }}>
-        {[["home", "Home"], ["orders", "Orders"], ["menu", "Menu"], ["website", "Website"], ["more", "More"]].map(([key, label]) => (
+        {[["home", "Home"], ["orders", "Orders"], ["menu", "Menu"], ["website", "My Website"], ["more", "More"]].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{ flex: 1, padding: "12px 6px", background: "none", border: "none", borderBottom: tab === key ? `2px solid ${c.gold}` : "2px solid transparent", color: tab === key ? c.gold : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
         ))}
       </div>
@@ -3156,75 +3179,76 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
       <div style={{ padding: "20px" }}>
         {tab === "home" && (
         <Reveal>
-          <h1 className="display" style={{ fontSize: 19, fontWeight: 700, marginBottom: 16 }}>{greeting()}, {truck.name} 👋</h1>
+          <div style={{ position: "relative" }}>
+            <div style={{ position: "absolute", top: -40, right: -40, width: 220, height: 220, borderRadius: "50%", background: c.gold, opacity: 0.14, filter: "blur(70px)", pointerEvents: "none" }} />
+            <div style={{ position: "absolute", top: 160, left: -60, width: 180, height: 180, borderRadius: "50%", background: c.gold, opacity: 0.08, filter: "blur(70px)", pointerEvents: "none" }} />
 
-          <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: status === "OPEN" ? c.green : c.red, flexShrink: 0 }} />
-              <span style={{ fontWeight: 700, fontSize: 13 }}>{status === "OPEN" ? "OPEN" : "CLOSED"}</span>
-            </div>
-            <p style={{ fontSize: 12.5, color: c.stone, marginBottom: 12 }}>
-              {lat != null && lng != null ? `📍 Parked at ${spot || "your pinned spot"}${until ? ` · until ${until}` : ""}` : "📍 Not parked yet"}
-            </p>
+            <h1 className="display" style={{ fontSize: 19, fontWeight: 700, marginBottom: 16, position: "relative" }}>{greeting()}, {truck.name} 👋</h1>
 
-            {!locationEditing ? (
-              <button onClick={() => setLocationEditing(true)} style={{ width: "100%", background: "none", border: `1px solid ${c.gold}`, color: c.gold, padding: "10px", borderRadius: 999, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-                {lat != null && lng != null ? "Update Location" : "Set Today's Location"}
-              </button>
-            ) : (
-              <div style={{ marginTop: 6 }}>
-                <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Where are you parked?</label>
-                <input value={spot} onChange={(e) => setSpot(e.target.value)} placeholder="e.g. Cole Park, by the pier" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 12, fontSize: 14 }} />
-
-                <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Serving until</label>
-                <input value={until} onChange={(e) => setUntil(e.target.value)} placeholder="e.g. 8PM" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
-
-                <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Drop a pin so customers can find you</label>
-                <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
-
-                <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Are you serving right now?</label>
-                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-                  <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "OPEN" ? c.green : c.border}`, background: status === "OPEN" ? `${c.green}1F` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
-                  <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "CLOSED" ? c.red : c.border}`, background: status === "CLOSED" ? `${c.red}1F` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
-                </div>
-
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setLocationEditing(false)} style={{ flex: 1, background: "none", border: `1px solid ${c.border}`, color: c.stone, padding: "12px", borderRadius: 999, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Cancel</button>
-                  <button onClick={saveLocation} style={{ flex: 2, background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                    {saved ? <CheckCircle2 size={14} /> : <Send size={14} />} {saved ? "Updated" : "Save Location"}
-                  </button>
-                </div>
-                {saveError && <p style={{ color: c.red, fontSize: 11, marginTop: 8 }}>{saveError}</p>}
+            <div style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid ${hexAlpha(c.cream, 0.08)}`, borderRadius: 20, padding: 18, marginBottom: 16, boxShadow: `0 8px 30px rgba(0,0,0,0.3), inset 0 1px 0 ${hexAlpha(c.cream, 0.05)}`, position: "relative" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: status === "OPEN" ? c.green : c.red, flexShrink: 0, boxShadow: `0 0 10px ${status === "OPEN" ? c.green : c.red}` }} />
+                <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: 0.5 }}>{status === "OPEN" ? "OPEN" : "CLOSED"}</span>
               </div>
-            )}
-          </div>
+              <p style={{ fontSize: 12.5, color: c.stone, marginBottom: 12 }}>
+                {lat != null && lng != null ? `📍 Parked at ${spot || "your pinned spot"}${until ? ` · until ${until}` : ""}` : "📍 Not parked yet"}
+              </p>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
-            <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "12px 10px", textAlign: "center" }}>
-              <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: c.gold }}>{activeOrders.length}</div>
-              <div style={{ fontSize: 10, color: c.stone, marginTop: 2 }}>Active Orders</div>
-            </div>
-            <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "12px 10px", textAlign: "center" }}>
-              <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: c.gold }}>{todaysOrders.length}</div>
-              <div style={{ fontSize: 10, color: c.stone, marginTop: 2 }}>Orders Today</div>
-            </div>
-            <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "12px 10px", textAlign: "center" }}>
-              <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: c.gold }}>${todaysValue.toFixed(0)}</div>
-              <div style={{ fontSize: 10, color: c.stone, marginTop: 2 }}>Today's Value</div>
-            </div>
-          </div>
+              {!locationEditing ? (
+                <button onClick={() => setLocationEditing(true)} style={{ width: "100%", background: hexAlpha(c.gold, 0.08), border: `1px solid ${hexAlpha(c.gold, 0.4)}`, color: c.gold, padding: "11px", borderRadius: 999, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  {lat != null && lng != null ? "Update Location" : "Set Today's Location"}
+                </button>
+              ) : (
+                <div style={{ marginTop: 6 }}>
+                  <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Where are you parked?</label>
+                  <input value={spot} onChange={(e) => setSpot(e.target.value)} placeholder="e.g. Cole Park, by the pier" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 12, fontSize: 14 }} />
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
-            <button onClick={() => setTab("orders")} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 12px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>+ Take Order</button>
-            <button onClick={() => setLocationEditing(true)} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 12px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>📍 Update Location</button>
-            <button onClick={() => setTab("menu")} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 12px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>+ Add Menu Item</button>
-            <button onClick={goSite} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 12px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>👁 View My Site</button>
-          </div>
+                  <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Serving until</label>
+                  <input value={until} onChange={(e) => setUntil(e.target.value)} placeholder="e.g. 8PM" style={{ width: "100%", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
 
-          <SetupChecklist
-            c={c} truck={truck} theme={themeRow} menu={menu} location={{ ...initialLocation, lat, lng, status }}
-            onGo={(t) => { setTab(t); if (t === "home") setLocationEditing(true); }}
-          />
+                  <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Drop a pin so customers can find you</label>
+                  <LocationPinPicker c={c} lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} onClear={() => { setLat(null); setLng(null); }} />
+
+                  <label style={{ fontSize: 11.5, color: c.stone, display: "block", marginBottom: 5 }}>Are you serving right now?</label>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                    <button onClick={() => setStatus("OPEN")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "OPEN" ? c.green : c.border}`, background: status === "OPEN" ? `${c.green}1F` : "transparent", color: status === "OPEN" ? c.green : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>OPEN</button>
+                    <button onClick={() => setStatus("CLOSED")} style={{ flex: 1, padding: "11px", borderRadius: 999, border: `1px solid ${status === "CLOSED" ? c.red : c.border}`, background: status === "CLOSED" ? `${c.red}1F` : "transparent", color: status === "CLOSED" ? c.red : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CLOSED</button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => setLocationEditing(false)} style={{ flex: 1, background: "none", border: `1px solid ${c.border}`, color: c.stone, padding: "12px", borderRadius: 999, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                    <button onClick={saveLocation} style={{ flex: 2, background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                      {saved ? <CheckCircle2 size={14} /> : <Send size={14} />} {saved ? "Updated" : "Save Location"}
+                    </button>
+                  </div>
+                  {saveError && <p style={{ color: c.red, fontSize: 11, marginTop: 8 }}>{saveError}</p>}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16, position: "relative" }}>
+              {[
+                [activeOrders.length, "Active Orders"],
+                [todaysOrders.length, "Orders Today"],
+                [`$${todaysValue.toFixed(0)}`, "Today's Value"],
+              ].map(([value, label]) => (
+                <div key={label} style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid ${hexAlpha(c.cream, 0.08)}`, borderRadius: 16, padding: "14px 10px", textAlign: "center", boxShadow: `0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 ${hexAlpha(c.cream, 0.05)}` }}>
+                  <div className="mono" style={{ fontSize: 21, fontWeight: 800, color: c.gold, textShadow: `0 0 18px ${hexAlpha(c.gold, 0.35)}` }}>{value}</div>
+                  <div style={{ fontSize: 10, color: c.stone, marginTop: 3, letterSpacing: 0.3 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16, position: "relative" }}>
+              <button onClick={() => setTab("orders")} style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid ${hexAlpha(c.cream, 0.08)}`, borderRadius: 16, padding: "16px 14px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left", boxShadow: `0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 ${hexAlpha(c.cream, 0.05)}` }}>+ Take Order</button>
+              <button onClick={() => setTab("menu")} style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid ${hexAlpha(c.cream, 0.08)}`, borderRadius: 16, padding: "16px 14px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left", boxShadow: `0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 ${hexAlpha(c.cream, 0.05)}` }}>+ Add Menu Item</button>
+            </div>
+
+            <SetupChecklist
+              c={c} truck={truck} theme={themeRow} menu={menu} location={{ ...initialLocation, lat, lng, status }}
+              onGo={(t) => { setTab(t); if (t === "home") setLocationEditing(true); }}
+            />
+          </div>
         </Reveal>
         )}
 
@@ -3343,13 +3367,6 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
             <ThemeColorsPanel c={c} truck={truck} theme={themeRow} session={session} reload={reload} />
           </Collapsible>
 
-          {profileOpen && (
-            <LivePreviewFrame
-              truck={truck} theme={themeRow} draft={profileDraft}
-              location={{ ...initialLocation, spot, open_until: until, status, lat, lng }}
-              menu={menu} faqs={faqs}
-            />
-          )}
           <Collapsible
             c={c} icon={<Truck size={17} />} title="About your truck"
             summary={truck.about_text ? "Name, photo, lettering and your story" : "Name, photo, lettering — add your story"}
@@ -3378,6 +3395,14 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
               <button onClick={addFaq} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "9px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Add to Chatbot</button>
             </div>
           </Collapsible>
+
+          <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid #2A2420` }}>
+            <LivePreviewFrame
+              truck={truck} theme={themeRow} draft={profileDraft}
+              location={{ ...initialLocation, spot, open_until: until, status, lat, lng }}
+              menu={menu} faqs={faqs}
+            />
+          </div>
         </Reveal>
         )}
 
