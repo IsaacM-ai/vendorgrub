@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
-import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, ArrowRight, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Palette, Image as ImageIcon } from "lucide-react";
+import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, ArrowRight, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Palette, Image as ImageIcon, Lock } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -944,6 +944,41 @@ function LandingPage() {
 
 /* ============================= KITCHEN DASHBOARD (PIN-gated, no login) ============================= */
 /* ============================= REWARDS CHECK (public — /{slug}/rewards, no login) ============================= */
+// Landed on from the unsubscribe link at the bottom of every marketing
+// email -- reads the email straight off the query string (the link is
+// generated server-side per recipient, never typed by hand) and confirms
+// the opt-out immediately, no login or extra click required.
+function UnsubscribePage({ slug }) {
+  const c = COLORS_FALLBACK;
+  const [status, setStatus] = useState("working"); // 'working' | 'done' | 'error'
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const email = new URLSearchParams(window.location.search).get("email");
+    if (!email) { setStatus("error"); setError("Missing email address."); return; }
+    fn("unsubscribe", { slug, email }).then((res) => {
+      if (res.error) { setStatus("error"); setError(res.error); return; }
+      setStatus("done");
+    });
+  }, [slug]);
+
+  return (
+    <div style={{ background: c.bg, color: c.cream, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui", padding: 24, textAlign: "center" }}>
+      <div style={{ maxWidth: 340 }}>
+        {status === "working" && <p style={{ color: c.stone }}>Unsubscribing…</p>}
+        {status === "done" && (
+          <>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
+            <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>You're unsubscribed</h1>
+            <p style={{ color: c.stone, fontSize: 13 }}>You won't get any more marketing emails from this truck.</p>
+          </>
+        )}
+        {status === "error" && <p style={{ color: c.red, fontSize: 13 }}>{error || "Something went wrong."}</p>}
+      </div>
+    </div>
+  );
+}
+
 function RewardsCheck({ slug }) {
   const c = COLORS_FALLBACK;
   const [phone, setPhone] = useState("");
@@ -1266,6 +1301,9 @@ export default function App() {
   }
   if (PATH_SUB === "rewards") {
     return <RewardsCheck slug={PATH_SLUG} />;
+  }
+  if (PATH_SUB === "unsubscribe") {
+    return <UnsubscribePage slug={PATH_SLUG} />;
   }
 
   if (data.loading) {
@@ -2830,6 +2868,74 @@ function TemplateSwitcher({ c, truck, theme, session, reload }) {
   );
 }
 
+// Change password while logged in -- Supabase Auth trusts a valid session's
+// bearer token for this, so no current-password re-entry or edge function
+// is needed, just a direct PUT to the auth API (same pattern as the rest
+// of the app's direct-to-Supabase calls).
+function AccountPanel({ c, session, bare }) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const changePassword = async () => {
+    setError("");
+    if (newPassword.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (newPassword !== confirmPassword) { setError("Passwords don't match."); return; }
+    setSaving(true);
+    try {
+      const token = await getFreshToken(session.access_token);
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.message || err.msg || `Could not change password (${res.status}).`);
+        return;
+      }
+      setSaved(true);
+      setNewPassword("");
+      setConfirmPassword("");
+      setTimeout(() => setSaved(false), 1800);
+    } catch (e) {
+      setError(`Could not change password — ${e.message}. Check your connection and try again.`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={bare ? {} : { background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+      {!bare && <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Account</div>}
+      <label className="mono" style={{ fontSize: 10, color: c.stone }}>LOGIN EMAIL</label>
+      <div style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.stone, marginTop: 6, marginBottom: 16, fontSize: 14 }}>{session.email}</div>
+
+      <label className="mono" style={{ fontSize: 10, color: c.stone }}>NEW PASSWORD</label>
+      <input
+        type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+        placeholder="At least 8 characters"
+        style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 10, fontSize: 14 }}
+      />
+      <label className="mono" style={{ fontSize: 10, color: c.stone }}>CONFIRM NEW PASSWORD</label>
+      <input
+        type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+        placeholder="Retype the new password"
+        style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }}
+      />
+      {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
+      <button
+        onClick={changePassword} disabled={saving || !newPassword}
+        style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", opacity: (saving || !newPassword) ? 0.6 : 1 }}
+      >
+        {saving ? "Saving…" : saved ? "✓ Password updated" : "Change Password"}
+      </button>
+    </div>
+  );
+}
+
 function KitchenPinPanel({ c, truck, session, bare }) {
   const [pin, setPin] = useState("");
   const [saved, setSaved] = useState(false);
@@ -2872,9 +2978,90 @@ function KitchenPinPanel({ c, truck, session, bare }) {
 // Categories are whatever the owner already set up in Menu -- same list
 // customers browse by, now also used to keep a big menu from turning into
 // a wall of items when someone's mid-rush at the window.
+// Audience is whoever has an email on file from an order (online checkout
+// or the optional field on Take Order) minus anyone who's unsubscribed --
+// no separate contact list to manage, it's just derived from real orders.
+function MarketingPanel({ c, truck, audienceCount, campaigns, session, onSent }) {
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState(null);
+
+  const send = async () => {
+    if (!subject.trim() || !body.trim()) { setError("Subject and message are both required."); return; }
+    setSending(true);
+    setError("");
+    setResult(null);
+    try {
+      const res = await authedFn("send-campaign", { slug: truck.slug, subject: subject.trim(), body: body.trim() }, session.access_token);
+      if (res.error) { setError(res.error); return; }
+      setResult(`Sent to ${res.sent} of ${res.attempted} customers.`);
+      setSubject("");
+      setBody("");
+      onSent?.();
+    } catch (e) {
+      setError(`Could not send — ${e.message}.`);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <>
+      <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 16, marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700 }}>New Campaign</h3>
+          <span className="mono" style={{ fontSize: 11, color: c.gold }}>{audienceCount} customer{audienceCount === 1 ? "" : "s"}</span>
+        </div>
+        {audienceCount === 0 ? (
+          <p style={{ fontSize: 12, color: c.stone }}>No customers with an email on file yet — emails come in through online checkout or the optional field on Take Order.</p>
+        ) : (
+          <>
+            <input
+              value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject"
+              style={{ width: "100%", background: "#1A1512", border: "1px solid #2A2420", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 8 }}
+            />
+            <textarea
+              value={body} onChange={(e) => setBody(e.target.value)} placeholder="What do you want to tell your customers?" rows={5}
+              style={{ width: "100%", background: "#1A1512", border: "1px solid #2A2420", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 10, resize: "vertical", fontFamily: "inherit" }}
+            />
+            <p style={{ fontSize: 10.5, color: c.stone, marginBottom: 10 }}>Every email includes an unsubscribe link automatically.</p>
+            {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
+            {result && <p style={{ color: c.green, fontSize: 11, marginBottom: 8 }}>✓ {result}</p>}
+            <button
+              onClick={send} disabled={sending || !subject.trim() || !body.trim()}
+              style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 800, fontSize: 13, cursor: "pointer", opacity: (sending || !subject.trim() || !body.trim()) ? 0.6 : 1 }}
+            >
+              {sending ? "Sending…" : `Send to ${audienceCount} Customer${audienceCount === 1 ? "" : "s"}`}
+            </button>
+          </>
+        )}
+      </div>
+
+      <span className="mono" style={{ fontSize: 11, letterSpacing: 2, color: c.gold }}>HISTORY</span>
+      <h2 className="display" style={{ fontSize: 18, fontWeight: 700, margin: "4px 0 12px" }}>Past Campaigns</h2>
+      {campaigns.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>No campaigns sent yet.</p>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {campaigns.map((camp) => (
+          <div key={camp.id} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4, gap: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: 13 }}>{camp.subject}</span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: camp.status === "sent" ? c.green : camp.status === "failed" ? c.red : c.gold, textTransform: "uppercase", flexShrink: 0 }}>{camp.status}</span>
+            </div>
+            <p style={{ fontSize: 12, color: c.stone, marginBottom: 6, whiteSpace: "pre-wrap" }}>{camp.body.length > 120 ? `${camp.body.slice(0, 120)}…` : camp.body}</p>
+            <span className="mono" style={{ fontSize: 10, color: c.stone }}>{camp.recipient_count} recipient{camp.recipient_count === 1 ? "" : "s"} · {new Date(camp.sent_at || camp.created_at).toLocaleDateString()}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
   const [cart, setCart] = useState({}); // { menu_item_id: qty }
   const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -2898,12 +3085,14 @@ function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
       const res = await authedFn("owner-create-order", {
         slug: truck.slug,
         customer_name: customerName.trim(),
+        customer_email: customerEmail.trim() || undefined,
         items: cartEntries.map(([menu_item_id, qty]) => ({ menu_item_id, qty })),
       }, session.access_token);
       if (res.error) { setError(res.error); return; }
       onCreated(res.order);
       setCart({});
       setCustomerName("");
+      setCustomerEmail("");
     } catch (e) {
       setError(`Could not place order — ${e.message}.`);
     } finally {
@@ -2966,6 +3155,11 @@ function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
       <input
         value={customerName} onChange={(e) => setCustomerName(e.target.value)}
         placeholder="Customer name"
+        style={{ width: "100%", background: "#1A1512", border: "1px solid #2A2420", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 8 }}
+      />
+      <input
+        value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)}
+        placeholder="Email (optional)" type="email"
         style={{ width: "100%", background: "#1A1512", border: "1px solid #2A2420", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 10 }}
       />
       {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
@@ -3031,6 +3225,8 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
   const [faqs, setFaqs] = useState(initialFaqs);
   const [orders, setOrders] = useState([]);
   const [showAllOrders, setShowAllOrders] = useState(false);
+  const [campaigns, setCampaigns] = useState([]);
+  const [unsubscribedEmails, setUnsubscribedEmails] = useState([]);
   const [newQ, setNewQ] = useState("");
   const [newA, setNewA] = useState("");
   const [newItem, setNewItem] = useState({ name: "", price: "", description: "", photoFile: null, photoPreview: null });
@@ -3041,6 +3237,15 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
   useEffect(() => {
     loadOrders(truck.id, session.access_token).then(setOrders);
   }, [truck.id, session.access_token, loadOrders]);
+
+  const loadCampaigns = useCallback(() => {
+    authedRest(`email_campaigns?truck_id=eq.${truck.id}&select=*&order=created_at.desc`, { token: session.access_token }).then((r) => (r.ok ? r.json() : [])).then(setCampaigns);
+  }, [truck.id, session.access_token]);
+
+  useEffect(() => {
+    loadCampaigns();
+    authedRest(`email_unsubscribes?truck_id=eq.${truck.id}&select=email`, { token: session.access_token }).then((r) => (r.ok ? r.json() : [])).then((rows) => setUnsubscribedEmails(rows.map((row) => row.email)));
+  }, [truck.id, session.access_token, loadCampaigns]);
 
   const authedPatch = (path, body) =>
     authedRest(path, { method: "PATCH", token: session.access_token, body: JSON.stringify(body), prefer: "return=representation" });
@@ -3208,6 +3413,10 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
   const activeOrders = orders.filter((o) => o.status !== "completed");
   const todaysOrders = orders.filter((o) => new Date(o.created_at).toDateString() === new Date().toDateString());
   const todaysValue = todaysOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const unsubscribedSet = new Set(unsubscribedEmails);
+  const audienceCount = new Set(
+    orders.map((o) => o.customer_email?.trim().toLowerCase()).filter((e) => e && !unsubscribedSet.has(e))
+  ).size;
 
   const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kaushan+Script&family=Pacifico&family=Anton&family=Bebas+Neue&family=Permanent+Marker&family=Alex+Brush&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@500;600;700&display=swap');";
 
@@ -3239,7 +3448,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
       </nav>
 
       <div style={{ display: "flex", borderBottom: `1px solid #2A2420`, background: "#0A0807" }}>
-        {[["home", "Home"], ["orders", "Orders"], ["menu", "Menu"], ["website", "My Website"], ["more", "More"]].map(([key, label]) => (
+        {[["home", "Home"], ["orders", "Orders"], ["menu", "Menu"], ["website", "My Website"], ["marketing", "Marketing"], ["more", "More"]].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{ flex: 1, padding: "12px 6px", background: "none", border: "none", borderBottom: tab === key ? `2px solid ${c.gold}` : "2px solid transparent", color: tab === key ? c.gold : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
         ))}
       </div>
@@ -3247,7 +3456,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
       <div style={{ padding: "20px" }}>
         {tab === "home" && (
         <Reveal>
-          <div style={{ position: "relative" }}>
+          <div style={{ position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: -40, right: -40, width: 220, height: 220, borderRadius: "50%", background: c.gold, opacity: 0.14, filter: "blur(70px)", pointerEvents: "none" }} />
             <div style={{ position: "absolute", top: 160, left: -60, width: 180, height: 180, borderRadius: "50%", background: c.gold, opacity: 0.08, filter: "blur(70px)", pointerEvents: "none" }} />
 
@@ -3492,8 +3701,18 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
         </Reveal>
         )}
 
+        {tab === "marketing" && (
+        <Reveal delay={80}>
+          <p style={{ fontSize: 12.5, color: c.stone, marginBottom: 14, lineHeight: 1.5 }}>Email your past customers directly — anyone who's given you their email at checkout or a counter order, minus anyone who's unsubscribed.</p>
+          <MarketingPanel c={c} truck={truck} audienceCount={audienceCount} campaigns={campaigns} session={session} onSent={loadCampaigns} />
+        </Reveal>
+        )}
+
         {tab === "more" && (
         <Reveal delay={80}>
+          <Collapsible c={c} icon={<Lock size={17} />} title="Account" summary="Your login email and password">
+            <AccountPanel bare c={c} session={session} />
+          </Collapsible>
           <Collapsible c={c} icon={<Store size={17} />} title="Kitchen screen PIN" summary="For staff taking orders on a second screen">
             <KitchenPinPanel bare c={c} truck={truck} session={session} />
           </Collapsible>
