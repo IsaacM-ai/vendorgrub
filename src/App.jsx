@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
-import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, ArrowRight, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Palette, Image as ImageIcon } from "lucide-react";
+import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, ArrowRight, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Palette, Image as ImageIcon, Lock } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -2830,6 +2830,74 @@ function TemplateSwitcher({ c, truck, theme, session, reload }) {
   );
 }
 
+// Change password while logged in -- Supabase Auth trusts a valid session's
+// bearer token for this, so no current-password re-entry or edge function
+// is needed, just a direct PUT to the auth API (same pattern as the rest
+// of the app's direct-to-Supabase calls).
+function AccountPanel({ c, session, bare }) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const changePassword = async () => {
+    setError("");
+    if (newPassword.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (newPassword !== confirmPassword) { setError("Passwords don't match."); return; }
+    setSaving(true);
+    try {
+      const token = await getFreshToken(session.access_token);
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.message || err.msg || `Could not change password (${res.status}).`);
+        return;
+      }
+      setSaved(true);
+      setNewPassword("");
+      setConfirmPassword("");
+      setTimeout(() => setSaved(false), 1800);
+    } catch (e) {
+      setError(`Could not change password — ${e.message}. Check your connection and try again.`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={bare ? {} : { background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+      {!bare && <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Account</div>}
+      <label className="mono" style={{ fontSize: 10, color: c.stone }}>LOGIN EMAIL</label>
+      <div style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.stone, marginTop: 6, marginBottom: 16, fontSize: 14 }}>{session.email}</div>
+
+      <label className="mono" style={{ fontSize: 10, color: c.stone }}>NEW PASSWORD</label>
+      <input
+        type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+        placeholder="At least 8 characters"
+        style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 10, fontSize: 14 }}
+      />
+      <label className="mono" style={{ fontSize: 10, color: c.stone }}>CONFIRM NEW PASSWORD</label>
+      <input
+        type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+        placeholder="Retype the new password"
+        style={{ width: "100%", background: c.bg, border: `1px solid #2A2420`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }}
+      />
+      {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
+      <button
+        onClick={changePassword} disabled={saving || !newPassword}
+        style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", opacity: (saving || !newPassword) ? 0.6 : 1 }}
+      >
+        {saving ? "Saving…" : saved ? "✓ Password updated" : "Change Password"}
+      </button>
+    </div>
+  );
+}
+
 function KitchenPinPanel({ c, truck, session, bare }) {
   const [pin, setPin] = useState("");
   const [saved, setSaved] = useState(false);
@@ -2875,6 +2943,7 @@ function KitchenPinPanel({ c, truck, session, bare }) {
 function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
   const [cart, setCart] = useState({}); // { menu_item_id: qty }
   const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -2898,12 +2967,14 @@ function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
       const res = await authedFn("owner-create-order", {
         slug: truck.slug,
         customer_name: customerName.trim(),
+        customer_email: customerEmail.trim() || undefined,
         items: cartEntries.map(([menu_item_id, qty]) => ({ menu_item_id, qty })),
       }, session.access_token);
       if (res.error) { setError(res.error); return; }
       onCreated(res.order);
       setCart({});
       setCustomerName("");
+      setCustomerEmail("");
     } catch (e) {
       setError(`Could not place order — ${e.message}.`);
     } finally {
@@ -2966,6 +3037,11 @@ function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
       <input
         value={customerName} onChange={(e) => setCustomerName(e.target.value)}
         placeholder="Customer name"
+        style={{ width: "100%", background: "#1A1512", border: "1px solid #2A2420", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 8 }}
+      />
+      <input
+        value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)}
+        placeholder="Email (optional)" type="email"
         style={{ width: "100%", background: "#1A1512", border: "1px solid #2A2420", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 10 }}
       />
       {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
@@ -3494,6 +3570,9 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
 
         {tab === "more" && (
         <Reveal delay={80}>
+          <Collapsible c={c} icon={<Lock size={17} />} title="Account" summary="Your login email and password">
+            <AccountPanel bare c={c} session={session} />
+          </Collapsible>
           <Collapsible c={c} icon={<Store size={17} />} title="Kitchen screen PIN" summary="For staff taking orders on a second screen">
             <KitchenPinPanel bare c={c} truck={truck} session={session} />
           </Collapsible>
