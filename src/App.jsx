@@ -3456,7 +3456,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
       <div style={{ padding: "20px" }}>
         {tab === "home" && (
         <Reveal>
-          <div style={{ position: "relative" }}>
+          <div style={{ position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: -40, right: -40, width: 220, height: 220, borderRadius: "50%", background: c.gold, opacity: 0.14, filter: "blur(70px)", pointerEvents: "none" }} />
             <div style={{ position: "absolute", top: 160, left: -60, width: 180, height: 180, borderRadius: "50%", background: c.gold, opacity: 0.08, filter: "blur(70px)", pointerEvents: "none" }} />
 
