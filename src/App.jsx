@@ -3009,7 +3009,7 @@ function MarketingPanel({ c, truck, audienceCount, campaigns, session, onSent })
 
   return (
     <>
-      <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 16, marginBottom: 18 }}>
+      <div style={{ ...glass(c, { radius: 18 }), padding: 16, marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <h3 style={{ fontSize: 14, fontWeight: 700 }}>New Campaign</h3>
           <span className="mono" style={{ fontSize: 11, color: c.gold }}>{audienceCount} customer{audienceCount === 1 ? "" : "s"}</span>
@@ -3044,7 +3044,7 @@ function MarketingPanel({ c, truck, audienceCount, campaigns, session, onSent })
       {campaigns.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>No campaigns sent yet.</p>}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {campaigns.map((camp) => (
-          <div key={camp.id} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: 14 }}>
+          <div key={camp.id} style={{ ...glass(c, { radius: 14 }), padding: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4, gap: 8 }}>
               <span style={{ fontWeight: 700, fontSize: 13 }}>{camp.subject}</span>
               <span style={{ fontSize: 10, fontWeight: 800, color: camp.status === "sent" ? c.green : camp.status === "failed" ? c.red : c.gold, textTransform: "uppercase", flexShrink: 0 }}>{camp.status}</span>
@@ -3101,7 +3101,7 @@ function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
   };
 
   return (
-    <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 16, marginBottom: 18 }}>
+    <div style={{ ...glass(c, { radius: 18 }), padding: 16, marginBottom: 18 }}>
       <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Take an Order</h3>
       {available.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>Add menu items first to take an order.</p>}
 
@@ -3126,7 +3126,7 @@ function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: cartCount > 0 ? 14 : 4 }}>
         {shown.map((item) => (
-          <div key={item.id} style={{ background: "#1A1512", border: `1px solid ${cart[item.id] > 0 ? c.gold : "#2A2420"}`, borderRadius: 14, overflow: "hidden" }}>
+          <div key={item.id} style={{ ...glass(c, { radius: 14, opacity: 0.4, blur: 12 }), border: `1px solid ${cart[item.id] > 0 ? c.gold : hexAlpha(c.cream, 0.08)}`, overflow: "hidden" }}>
             <div style={{ height: 84, background: item.photo_url ? `url(${item.photo_url}) center/cover` : "#0E0B09", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {!item.photo_url && <ImageIcon size={18} color={c.stone} />}
             </div>
@@ -3190,6 +3190,20 @@ function hexAlpha(hex, a) {
   const g = parseInt(full.slice(2, 4), 16) || 0;
   const b = parseInt(full.slice(4, 6), 16) || 0;
   return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+// Shared "Liquid Glass" surface style, matching the formula the Home tab
+// shipped with -- translucent card color, blurred backdrop, hairline
+// border and a layered shadow (drop + inner highlight) for depth.
+function glass(c, { radius = 20, opacity = 0.55, blur = 18 } = {}) {
+  return {
+    background: hexAlpha(c.card, opacity),
+    backdropFilter: `blur(${blur}px)`,
+    WebkitBackdropFilter: `blur(${blur}px)`,
+    border: `1px solid ${hexAlpha(c.cream, 0.08)}`,
+    borderRadius: radius,
+    boxShadow: `0 8px 30px rgba(0,0,0,0.3), inset 0 1px 0 ${hexAlpha(c.cream, 0.05)}`,
+  };
 }
 
 /* ============================= OWNER DASHBOARD SHELL =============================
@@ -3441,15 +3455,26 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
         .mono { font-family: 'JetBrains Mono', monospace; } .display { font-family: 'Oswald', sans-serif; text-transform: uppercase; } .scrollx::-webkit-scrollbar { display: none; }
       `}</style>
 
-      <nav style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(14,11,9,0.95)", borderBottom: `1px solid #2A2420`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <nav style={{ position: "sticky", top: 0, zIndex: 40, background: hexAlpha(c.bg, 0.72), backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${hexAlpha(c.cream, 0.08)}`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <button onClick={goSite} className="display" style={{ background: "none", border: "none", color: c.gold, cursor: "pointer", fontSize: 14, letterSpacing: 0.5 }}>VendorGrub</button>
         <span className="mono" style={{ fontSize: 12, color: c.gold, letterSpacing: 1 }}>{isAdmin ? session.email : `${truck.name} — Owner`}</span>
         <button onClick={onLogout} style={{ background: "none", border: "none", color: c.stone, cursor: "pointer" }}><LogOut size={16} /></button>
       </nav>
 
-      <div style={{ display: "flex", borderBottom: `1px solid #2A2420`, background: "#0A0807" }}>
+      <div style={{ display: "flex", gap: 4, padding: "8px 10px", background: hexAlpha(c.bg, 0.72), backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${hexAlpha(c.cream, 0.08)}` }}>
         {[["home", "Home"], ["orders", "Orders"], ["menu", "Menu"], ["website", "My Website"], ["marketing", "Marketing"], ["more", "More"]].map(([key, label]) => (
-          <button key={key} onClick={() => setTab(key)} style={{ flex: 1, padding: "12px 6px", background: "none", border: "none", borderBottom: tab === key ? `2px solid ${c.gold}` : "2px solid transparent", color: tab === key ? c.gold : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
+          <button
+            key={key} onClick={() => setTab(key)}
+            style={{
+              flex: 1, padding: "9px 6px", background: tab === key ? hexAlpha(c.gold, 0.16) : "none",
+              border: "none", borderRadius: 999, color: tab === key ? c.gold : c.stone,
+              fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+              boxShadow: tab === key ? `inset 0 0 0 1px ${hexAlpha(c.gold, 0.35)}` : "none",
+              transition: "background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease",
+            }}
+          >
+            {label}
+          </button>
         ))}
       </div>
 
@@ -3547,7 +3572,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
             {orders.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>No orders yet.</p>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {(showAllOrders ? orders : activeOrders).map((o) => (
-                <div key={o.id} style={{ background: c.card, border: `1px solid #2A2420`, borderLeft: `3px solid ${statusStyle[o.status]}`, borderRadius: 12, padding: 14 }}>
+                <div key={o.id} style={{ ...glass(c, { radius: 16 }), borderLeft: `3px solid ${statusStyle[o.status]}`, padding: 14 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span className="mono" style={{ fontSize: 13, fontWeight: 800 }}>#{String(o.order_number).padStart(3, "0")}</span>
@@ -3589,7 +3614,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
               <MenuCategoriesPanel c={c} categories={categories} onSave={saveCategory} onAdd={addCategory} onDelete={deleteCategory} />
             </Collapsible>
 
-            <div style={{ background: c.card, border: `1px dashed #3A322C`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+            <div style={{ ...glass(c, { radius: 16 }), border: `1px dashed ${hexAlpha(c.cream, 0.16)}`, padding: 14, marginBottom: 16 }}>
               <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, height: 100, border: `1px dashed #3A322C`, borderRadius: 10, marginBottom: 10, cursor: "pointer", overflow: "hidden", background: newItem.photoPreview ? `url(${newItem.photoPreview}) center/cover` : "transparent" }}>
                 {!newItem.photoPreview && <><ImageIcon size={20} color={c.stone} /><span style={{ fontSize: 11, color: c.stone }}>Add a photo</span></>}
                 <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => e.target.files[0] && setNewItem((s) => ({ ...s, photoFile: e.target.files[0], photoPreview: URL.createObjectURL(e.target.files[0]) }))} />
@@ -3606,7 +3631,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {menu.length === 0 && <p style={{ fontSize: 12, color: c.stone, textAlign: "center", padding: 20 }}>No items yet — add your first one above.</p>}
               {menu.map((item) => (
-                <div key={item.id} style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: 12, display: "flex", gap: 12 }}>
+                <div key={item.id} style={{ ...glass(c, { radius: 14 }), padding: 12, display: "flex", gap: 12 }}>
                   <label style={{ width: 56, height: 56, borderRadius: 8, flexShrink: 0, cursor: "pointer", overflow: "hidden", background: item.photo_url ? `url(${item.photo_url}) center/cover` : "#0E0B09", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {!item.photo_url && <ImageIcon size={16} color={c.stone} />}
                     {uploading === item.id && <span className="mono" style={{ fontSize: 8, color: c.gold }}>...</span>}
@@ -3640,7 +3665,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
 
         {tab === "website" && (
         <Reveal delay={80}>
-          <div style={{ background: c.card, border: `1px solid #2A2420`, borderRadius: 14, padding: 16, marginBottom: 18, textAlign: "center" }}>
+          <div style={{ ...glass(c, { radius: 18 }), padding: 16, marginBottom: 18, textAlign: "center" }}>
             <p style={{ fontSize: 11, color: c.green, fontWeight: 700, marginBottom: 6 }}>● YOUR SITE IS LIVE</p>
             <p className="mono" style={{ fontSize: 12, color: c.gold, marginBottom: 14 }}>{siteUrlDisplay}</p>
             <div style={{ background: "#fff", borderRadius: 12, padding: 12, display: "inline-block", marginBottom: 12 }}>
@@ -3742,13 +3767,13 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
                   {listedSaved ? "✓ Saved" : "Save Listing Setting"}
                 </button>
               </Collapsible>
-              <button onClick={() => setView("trucks")} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: c.card, border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 16px", color: c.cream, fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 12 }}>
+              <button onClick={() => setView("trucks")} style={{ ...glass(c, { radius: 14 }), width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", color: c.cream, fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 12 }}>
                 All Trucks <ArrowRight size={15} />
               </button>
             </>
           )}
 
-          <button onClick={onLogout} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "none", border: `1px solid #2A2420`, borderRadius: 12, padding: "14px 16px", color: c.stone, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+          <button onClick={onLogout} style={{ ...glass(c, { radius: 14, opacity: 0.35 }), width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px 16px", color: c.stone, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
             <LogOut size={14} /> Log Out
           </button>
         </Reveal>
