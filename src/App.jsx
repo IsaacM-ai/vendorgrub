@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
-import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, ArrowRight, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Palette, Image as ImageIcon, Lock } from "lucide-react";
+import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, ArrowRight, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Palette, Image as ImageIcon, Lock, Moon, Sun } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -155,6 +155,17 @@ async function uploadPhoto(file, path, token) {
 }
 
 const COLORS_FALLBACK = { bg: "#0E0B09", card: "#1A1512", gold: "#D4A537", red: "#C4281C", cream: "#F3E9D8", stone: "#8C8074", green: "#4CA466" };
+
+// Owner dashboard chrome deliberately ignores the truck's own storefront
+// theme (same reasoning as forcing the brand teal accent below) so every
+// owner sees a consistent control panel -- the only variable is this
+// light/dark preference, which the owner picks for themselves and which
+// is persisted per-device rather than tied to any one truck's theme.
+const DASH_PALETTES = {
+  dark: { bg: "#0E0B09", card: "#1A1512", cream: "#F3E9D8", stone: "#8C8074", border: "rgba(255,255,255,0.35)", borderStrong: "rgba(255,255,255,0.45)" },
+  light: { bg: "#F4F0EA", card: "#FFFFFF", cream: "#1E1712", stone: "#7A6E62", border: "rgba(20,14,8,0.16)", borderStrong: "rgba(20,14,8,0.26)" },
+};
+const DASH_MODE_KEY = "vg_dash_mode";
 
 // Truck name display fonts — owner picks one in the dashboard, storefront
 // renders the hero name in it. Google Fonts query fragment shared by every
@@ -405,13 +416,13 @@ function PromoTagPicker({ c, item, onSetTag, onSetNote }) {
       <div style={{ display: "flex", gap: 6 }}>
         <button
           onClick={() => setTag("popular")}
-          style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, background: item.promo_tag === "popular" ? `${c.gold}22` : "none", border: `1px solid ${item.promo_tag === "popular" ? c.gold : "rgba(255,255,255,0.35)"}`, color: item.promo_tag === "popular" ? c.gold : c.stone, borderRadius: 999, padding: "5px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+          style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, background: item.promo_tag === "popular" ? `${c.gold}22` : "none", border: `1px solid ${item.promo_tag === "popular" ? c.gold : "var(--dash-border)"}`, color: item.promo_tag === "popular" ? c.gold : c.stone, borderRadius: 999, padding: "5px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
         >
           <Star size={11} /> POPULAR
         </button>
         <button
           onClick={() => setTag("deal")}
-          style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, background: item.promo_tag === "deal" ? `${c.red}22` : "none", border: `1px solid ${item.promo_tag === "deal" ? c.red : "rgba(255,255,255,0.35)"}`, color: item.promo_tag === "deal" ? c.red : c.stone, borderRadius: 999, padding: "5px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+          style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, background: item.promo_tag === "deal" ? `${c.red}22` : "none", border: `1px solid ${item.promo_tag === "deal" ? c.red : "var(--dash-border)"}`, color: item.promo_tag === "deal" ? c.red : c.stone, borderRadius: 999, padding: "5px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
         >
           <Flame size={11} /> SPECIAL DEAL
         </button>
@@ -421,7 +432,7 @@ function PromoTagPicker({ c, item, onSetTag, onSetNote }) {
           defaultValue={item.promo_note || ""}
           onBlur={(e) => onSetNote(item, e.target.value)}
           placeholder="Deal details — e.g. 20% off today, Buy 1 Get 1"
-          style={{ width: "100%", background: c.bg, border: "1px solid rgba(255,255,255,0.35)", borderRadius: 6, padding: "6px 8px", color: c.cream, fontSize: 11, marginTop: 6 }}
+          style={{ width: "100%", background: c.bg, border: "1px solid var(--dash-border)", borderRadius: 6, padding: "6px 8px", color: c.cream, fontSize: 11, marginTop: 6 }}
         />
       )}
     </div>
@@ -435,7 +446,7 @@ function CategoryPicker({ c, item, categories, onSetCategory }) {
     <select
       value={item.category_id || ""}
       onChange={(e) => onSetCategory(item, e.target.value || null)}
-      style={{ width: "100%", background: c.bg, border: "1px solid rgba(255,255,255,0.35)", borderRadius: 6, padding: "6px 8px", color: c.cream, fontSize: 11, marginTop: 8 }}
+      style={{ width: "100%", background: c.bg, border: "1px solid var(--dash-border)", borderRadius: 6, padding: "6px 8px", color: c.cream, fontSize: 11, marginTop: 8 }}
     >
       <option value="">No category</option>
       {categories.map((cat) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
@@ -461,15 +472,15 @@ function MenuCategoriesPanel({ c, categories, onSave, onAdd, onDelete }) {
   };
 
   return (
-    <div style={{ background: c.card, border: "1px solid rgba(255,255,255,0.35)", borderRadius: 12, padding: 14, marginBottom: 14 }}>
+    <div style={{ background: c.card, border: "1px solid var(--dash-border)", borderRadius: 12, padding: 14, marginBottom: 14 }}>
       <p style={{ fontSize: 11.5, color: c.stone, marginBottom: 12, lineHeight: 1.5 }}>Group your menu into categories — customers can browse by category on your site, and you can filter by category when taking a counter order.</p>
       {categories.map((cat) => (
-        <div key={cat.id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.35)" }}>
+        <div key={cat.id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid var(--dash-border)" }}>
           <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
             <input
               value={drafts[cat.id]?.name ?? cat.name}
               onChange={(e) => setDrafts((d) => ({ ...d, [cat.id]: { ...d[cat.id], name: e.target.value } }))}
-              style={{ flex: 1, background: c.bg, border: "1px solid rgba(255,255,255,0.35)", borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, fontWeight: 700 }}
+              style={{ flex: 1, background: c.bg, border: "1px solid var(--dash-border)", borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, fontWeight: 700 }}
             />
             <button onClick={() => onDelete(cat.id)} style={{ background: "none", border: "none", color: c.stone, cursor: "pointer", flexShrink: 0 }}><Trash2 size={14} /></button>
           </div>
@@ -477,7 +488,7 @@ function MenuCategoriesPanel({ c, categories, onSave, onAdd, onDelete }) {
             value={drafts[cat.id]?.caption ?? (cat.caption || "")}
             onChange={(e) => setDrafts((d) => ({ ...d, [cat.id]: { ...d[cat.id], caption: e.target.value } }))}
             placeholder="Optional caption shown to customers…"
-            style={{ width: "100%", background: c.bg, border: "1px solid rgba(255,255,255,0.35)", borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 11, marginBottom: 6 }}
+            style={{ width: "100%", background: c.bg, border: "1px solid var(--dash-border)", borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 11, marginBottom: 6 }}
           />
           <button
             onClick={async () => { await onSave(cat.id, drafts[cat.id]); setSavedId(cat.id); setTimeout(() => setSavedId(""), 1500); }}
@@ -491,7 +502,7 @@ function MenuCategoriesPanel({ c, categories, onSave, onAdd, onDelete }) {
         <input
           value={newName} onChange={(e) => setNewName(e.target.value)}
           placeholder="New category name…"
-          style={{ flex: 1, background: c.bg, border: "1px dashed rgba(255,255,255,0.35)", borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12 }}
+          style={{ flex: 1, background: c.bg, border: "1px dashed var(--dash-border)", borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12 }}
         />
         <button
           onClick={addCategory} disabled={adding || !newName.trim()}
@@ -734,7 +745,7 @@ function SelfOnboard() {
         .vg-display { font-family: 'Space Grotesk', sans-serif; } .vg-mono { font-family: 'JetBrains Mono', monospace; }
       `}</style>
       <div style={{ maxWidth: 400, margin: "0 auto" }}>
-        <h1 className="vg-display" style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>🚚 Create Your Truck's Ordering Page</h1>
+        <h1 className="vg-display" style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Launch Your Ordering Page</h1>
         <p style={{ fontSize: 12, color: b.stone, marginBottom: 14 }}>Let's get your food truck online in less than 60 seconds.</p>
 
         <div style={{ fontSize: 11, color: b.stone, marginBottom: 4 }}>Step {step} of 2</div>
@@ -745,7 +756,7 @@ function SelfOnboard() {
         {/* Live preview card — updates as they type */}
         <div style={{ background: b.card, border: `1px solid ${b.border}`, borderRadius: 14, padding: 16, marginBottom: 24 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>🚚 {form.truck_name || "Your Truck"}</span>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{form.truck_name || "Your Truck"}</span>
             <span className="vg-mono" style={{ fontSize: 9, color: b.stone, border: `1px solid ${b.border}`, borderRadius: 999, padding: "2px 8px" }}>NOT LIVE YET</span>
           </div>
           <p className="vg-mono" style={{ fontSize: 12, color: b.teal, marginBottom: 8 }}>{form.slug || "yourtruck"}.vendorgrub.netlify.app</p>
@@ -762,11 +773,11 @@ function SelfOnboard() {
 
             <div style={{ fontSize: 11, fontWeight: 700, color: b.teal, letterSpacing: 1, marginBottom: 8 }}>TRUCK DETAILS</div>
             <label style={{ fontSize: 12, color: b.stone, display: "block", marginBottom: 4 }}>What is your food truck called?</label>
-            <input value={form.truck_name} onChange={(e) => onTruckName(e.target.value)} placeholder="Los Papas" style={{ width: "100%", background: "rgba(47,191,212,0.07)", border: `1.5px solid ${b.teal}99`, backdropFilter: "blur(6px)", borderRadius: 999, padding: "11px 12px", color: b.white, marginBottom: 12, fontSize: 14 }} />
+            <input value={form.truck_name} onChange={(e) => onTruckName(e.target.value)} placeholder="VendorGrub Tacos" style={{ width: "100%", background: "rgba(47,191,212,0.07)", border: `1.5px solid ${b.teal}99`, backdropFilter: "blur(6px)", borderRadius: 999, padding: "11px 12px", color: b.white, marginBottom: 12, fontSize: 14 }} />
 
             <label style={{ fontSize: 12, color: b.stone, display: "block", marginBottom: 4 }}>Choose your page name</label>
             <div style={{ display: "flex", alignItems: "center", background: "rgba(47,191,212,0.07)", backdropFilter: "blur(6px)", border: `1.5px solid ${slugStatus === "taken" ? "#E5484D" : slugStatus === "available" ? "#4CA466" : `${b.teal}99`}`, borderRadius: 999, padding: "0 16px", marginBottom: 4 }}>
-              <input value={form.slug} onChange={(e) => onSlugEdit(e.target.value)} placeholder="lospapas" style={{ flex: 1, minWidth: 0, background: "none", border: "none", color: b.white, padding: "11px 0", fontSize: 13, outline: "none" }} />
+              <input value={form.slug} onChange={(e) => onSlugEdit(e.target.value)} placeholder="vendorgrubtacos" style={{ flex: 1, minWidth: 0, background: "none", border: "none", color: b.white, padding: "11px 0", fontSize: 13, outline: "none" }} />
               <span className="vg-mono" style={{ fontSize: 12, color: b.stone, whiteSpace: "nowrap" }}>.vendorgrub.netlify.app</span>
             </div>
             <div style={{ marginBottom: 12, minHeight: 16 }}>
@@ -1153,7 +1164,10 @@ function DemoSite() {
   useEffect(() => {
     (async () => {
       const truckRes = await rest(`trucks?slug=eq.los-papas&select=id,slug,name,tagline,subline,phone,delivery_radius,delivery_fee,rating,review_count,about_text`).then((r) => r.json());
-      const truck = truckRes?.[0];
+      // Swap in a fake number -- this is a real truck record, and Call /
+      // Request Catering both link straight to tel:${truck.phone}, so the
+      // unedited demo would ring whoever's phone is actually on file.
+      const truck = truckRes?.[0] ? { ...truckRes[0], phone: "(555) 010-1000" } : null;
       if (!truck) { setData((s) => ({ ...s, loading: false })); return; }
       const [themeRes, menuRes, locRes, faqRes, galRes] = await Promise.all([
         rest(`truck_theme?truck_id=eq.${truck.id}&select=*`).then((r) => r.json()),
@@ -2022,10 +2036,18 @@ function OwnerDashboard({ c: cIn, data, session, setSession, goSite }) {
   // Dashboard chrome always uses the VendorGrub brand teal, regardless of
   // the truck's own storefront colors -- keeps every truck's control panel
   // visually consistent even though their public sites all look different.
-  // Borders are bumped to a bold white too: the theme's own border colors
-  // are calibrated for the (lighter) customer-facing site and read as
-  // nearly invisible against the dashboard's darker glass panels.
-  const c = { ...cIn, gold: BRAND.teal, border: "rgba(255,255,255,0.35)", borderStrong: "rgba(255,255,255,0.45)" };
+  // bg/card/cream/stone/border follow the same idea: they come from
+  // DASH_PALETTES (below) rather than the truck's own theme, so every
+  // owner's dashboard looks the same modulo their own light/dark pick.
+  const [dashMode, setDashMode] = useState(() => {
+    try { return localStorage.getItem(DASH_MODE_KEY) === "light" ? "light" : "dark"; } catch { return "dark"; }
+  });
+  const toggleDashMode = () => setDashMode((m) => {
+    const next = m === "dark" ? "light" : "dark";
+    try { localStorage.setItem(DASH_MODE_KEY, next); } catch {}
+    return next;
+  });
+  const c = { ...cIn, gold: BRAND.teal, mode: dashMode, ...DASH_PALETTES[dashMode] };
   const [role, setRole] = useState(null); // 'admin' | 'owner' | null (checking)
   const [restoring, setRestoring] = useState(true);
 
@@ -2052,7 +2074,7 @@ function OwnerDashboard({ c: cIn, data, session, setSession, goSite }) {
   if (restoring) return <div style={{ background: c.bg, color: c.stone, minHeight: "100vh" }} />;
   if (!session) return <LoginScreen c={c} onLogin={setSession} goSite={goSite} />;
   if (role === null) return <div style={{ background: c.bg, color: c.stone, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Checking access…</div>;
-  return <Dashboard c={c} data={data} session={session} onLogout={logout} goSite={goSite} role={role} />;
+  return <Dashboard c={c} data={data} session={session} onLogout={logout} goSite={goSite} role={role} dashMode={dashMode} onToggleDashMode={toggleDashMode} />;
 }
 
 function LoginScreen({ c, onLogin, goSite }) {
@@ -2087,8 +2109,8 @@ function LoginScreen({ c, onLogin, goSite }) {
       <div style={{ width: "100%", maxWidth: 320 }}>
         <button onClick={goSite} style={{ background: "none", border: "none", color: c.stone, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, marginBottom: 20 }}>View Website →</button>
         <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Owner Login</h2>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" style={{ width: "100%", background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 10, fontSize: 14 }} />
-        <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Password" style={{ width: "100%", background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" style={{ width: "100%", background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 10, fontSize: 14 }} />
+        <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Password" style={{ width: "100%", background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 14, fontSize: 14 }} />
         {error && <p style={{ color: c.red, fontSize: 12, marginBottom: 12 }}>{error}</p>}
         <button onClick={login} disabled={loading} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
           <LogIn size={14} /> {loading ? "Signing in…" : "Sign In"}
@@ -2343,37 +2365,37 @@ function TruckProfilePanel({ c, truck, theme, session, reload, bare, onDraftChan
 
   const shellStyle = bare
     ? {}
-    : { background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 14, padding: 18, marginBottom: 18 };
+    : { background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 14, padding: 18, marginBottom: 18 };
 
   return (
     <div style={shellStyle}>
       {!bare && <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Truck Profile</div>}
 
-      <label style={{ height: 110, borderRadius: 10, marginBottom: 14, cursor: "pointer", overflow: "hidden", position: "relative", background: heroPreview ? `url(${heroPreview}) center/cover` : c.bg, border: `1px dashed rgba(255,255,255,0.35)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <label style={{ height: 110, borderRadius: 10, marginBottom: 14, cursor: "pointer", overflow: "hidden", position: "relative", background: heroPreview ? `url(${heroPreview}) center/cover` : c.bg, border: `1px dashed var(--dash-border)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
         {!heroPreview && <div style={{ textAlign: "center" }}><ImageIcon size={20} color={c.stone} /><div style={{ fontSize: 11, color: c.stone, marginTop: 4 }}>Hero background photo</div></div>}
         {heroPreview && <div style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 10, padding: "3px 8px", borderRadius: 999 }}>Change photo</div>}
         <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files[0]; if (f) { setHeroPreview(URL.createObjectURL(f)); save(f); } }} />
       </label>
 
       <label className="mono" style={{ fontSize: 10, color: c.stone }}>TRUCK NAME</label>
-      <input value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
+      <input value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
 
       <label className="mono" style={{ fontSize: 10, color: c.stone, display: "block", marginBottom: 6 }}>NAME STYLE — scroll to browse, tap to apply</label>
       <div className="scrollx" style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 14 }}>
         {Object.entries(NAME_FONTS).map(([key, f]) => (
-          <button key={key} onClick={() => selectFont(key)} style={{ flexShrink: 0, background: c.bg, border: `2px solid ${fontKey === key ? c.gold : "rgba(255,255,255,0.35)"}`, borderRadius: 10, padding: "8px 16px", cursor: "pointer" }}>
+          <button key={key} onClick={() => selectFont(key)} style={{ flexShrink: 0, background: c.bg, border: `2px solid ${fontKey === key ? c.gold : "var(--dash-border)"}`, borderRadius: 10, padding: "8px 16px", cursor: "pointer" }}>
             <span style={{ fontFamily: f.family, fontSize: 17, color: c.cream, whiteSpace: "nowrap" }}>{name || truck.name}</span>
           </button>
         ))}
       </div>
 
       <label className="mono" style={{ fontSize: 10, color: c.stone }}>TAGLINE</label>
-      <input value={tagline} onChange={(e) => setTagline(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 10, fontSize: 14 }} />
+      <input value={tagline} onChange={(e) => setTagline(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 10, fontSize: 14 }} />
       <label className="mono" style={{ fontSize: 10, color: c.stone }}>PHONE</label>
-      <input value={phone} onChange={(e) => setPhone(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
+      <input value={phone} onChange={(e) => setPhone(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }} />
 
       <label className="mono" style={{ fontSize: 10, color: c.stone }}>ABOUT — shown in the "About Vendor" section of your site</label>
-      <textarea value={aboutText} onChange={(e) => setAboutText(e.target.value)} rows={4} placeholder="Tell customers your story — how you started, what makes your food different, where you're from…" style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 13, fontFamily: "inherit", resize: "vertical" }} />
+      <textarea value={aboutText} onChange={(e) => setAboutText(e.target.value)} rows={4} placeholder="Tell customers your story — how you started, what makes your food different, where you're from…" style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 13, fontFamily: "inherit", resize: "vertical" }} />
 
       {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
       <button onClick={() => save(null)} disabled={uploading} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
@@ -2401,17 +2423,17 @@ function DeliverySettingsPanel({ c, truck, session, bare }) {
   };
 
   return (
-    <div style={bare ? {} : { background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+    <div style={bare ? {} : { background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
       {!bare && <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Delivery Settings</div>}
       <p style={{ fontSize: 11, color: c.stone, marginBottom: 10 }}>Controls the fee and radius customers see when they choose Delivery at checkout.</p>
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
         <div style={{ flex: 1 }}>
           <label className="mono" style={{ fontSize: 10, color: c.stone }}>DELIVERY FEE ($)</label>
-          <input type="number" step="0.01" min="0" value={fee} onChange={(e) => setFee(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginTop: 4 }} />
+          <input type="number" step="0.01" min="0" value={fee} onChange={(e) => setFee(e.target.value)} style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginTop: 4 }} />
         </div>
         <div style={{ flex: 1 }}>
           <label className="mono" style={{ fontSize: 10, color: c.stone }}>RADIUS (e.g. "3 miles")</label>
-          <input value={radius} onChange={(e) => setRadius(e.target.value)} placeholder="3 miles" style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginTop: 4 }} />
+          <input value={radius} onChange={(e) => setRadius(e.target.value)} placeholder="3 miles" style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginTop: 4 }} />
         </div>
       </div>
       {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
@@ -2499,7 +2521,7 @@ function LoyaltyPanel({ c, truck, session }) {
 
   return (
     <>
-      <div style={{ background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+      <div style={{ background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
           <span style={{ fontWeight: 700, fontSize: 14 }}>Rewards Program</span>
           <button onClick={toggleEnabled} style={{ background: settings.enabled ? c.green : "#3A322C", border: "none", borderRadius: 999, width: 44, height: 24, position: "relative", cursor: "pointer" }}>
@@ -2509,12 +2531,12 @@ function LoyaltyPanel({ c, truck, session }) {
         <p style={{ fontSize: 11, color: c.stone, marginBottom: 14 }}>{settings.enabled ? "Live — customers see the opt-in checkbox at checkout." : "Off — checkout won't mention rewards."}</p>
         <label className="mono" style={{ fontSize: 10, color: c.stone }}>POINTS PER ORDER</label>
         <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-          <input type="number" min="1" value={pointsPerOrder} onChange={(e) => setPointsPerOrder(e.target.value)} style={{ flex: 1, background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 13 }} />
+          <input type="number" min="1" value={pointsPerOrder} onChange={(e) => setPointsPerOrder(e.target.value)} style={{ flex: 1, background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 13 }} />
           <button onClick={savePointsPerOrder} style={{ background: c.gold, color: "#1A1210", border: "none", borderRadius: 8, padding: "0 16px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{saved ? "✓" : "Save"}</button>
         </div>
       </div>
 
-      <div style={{ background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 14, padding: 18, marginBottom: 18, textAlign: "center" }}>
+      <div style={{ background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 14, padding: 18, marginBottom: 18, textAlign: "center" }}>
         <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Share Your Rewards Page</div>
         <div style={{ background: "#fff", borderRadius: 12, padding: 14, display: "inline-block", marginBottom: 10 }}>
           <QRCodeCanvas value={rewardsUrl} size={130} fgColor="#0A0A0A" bgColor="#ffffff" />
@@ -2528,7 +2550,7 @@ function LoyaltyPanel({ c, truck, session }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10, marginBottom: 12 }}>
           {rewards.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>No rewards yet — add one below.</p>}
           {rewards.map((r) => (
-            <div key={r.id} style={{ background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: 12, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div key={r.id} style={{ background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: 12, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{r.name} <span className="mono" style={{ color: c.gold, fontWeight: 700, fontSize: 12 }}>· {r.points_cost} pts</span></div>
                 {r.description && <div style={{ fontSize: 11, color: c.stone, marginTop: 2 }}>{r.description}</div>}
@@ -2537,10 +2559,10 @@ function LoyaltyPanel({ c, truck, session }) {
             </div>
           ))}
         </div>
-        <div style={{ background: c.card, border: `1px dashed rgba(255,255,255,0.35)`, borderRadius: 10, padding: 12 }}>
-          <input value={newReward.name} onChange={(e) => setNewReward((s) => ({ ...s, name: e.target.value }))} placeholder="Reward name (e.g. Free Drink)" style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
-          <input value={newReward.description} onChange={(e) => setNewReward((s) => ({ ...s, description: e.target.value }))} placeholder="Description (optional)" style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
-          <input value={newReward.points_cost} onChange={(e) => setNewReward((s) => ({ ...s, points_cost: e.target.value }))} type="number" placeholder="Points cost" style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+        <div style={{ background: c.card, border: `1px dashed var(--dash-border)`, borderRadius: 10, padding: 12 }}>
+          <input value={newReward.name} onChange={(e) => setNewReward((s) => ({ ...s, name: e.target.value }))} placeholder="Reward name (e.g. Free Drink)" style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+          <input value={newReward.description} onChange={(e) => setNewReward((s) => ({ ...s, description: e.target.value }))} placeholder="Description (optional)" style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+          <input value={newReward.points_cost} onChange={(e) => setNewReward((s) => ({ ...s, points_cost: e.target.value }))} type="number" placeholder="Points cost" style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
           <button onClick={addReward} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "9px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>+ Add Reward</button>
         </div>
       </div>
@@ -2551,7 +2573,7 @@ function LoyaltyPanel({ c, truck, session }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
           {members.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>No one's opted in yet.</p>}
           {members.map((m) => (
-            <div key={m.id} style={{ background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: 12 }}>
+            <div key={m.id} style={{ background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700 }}>{m.name || "Guest"} <span className="mono" style={{ fontSize: 10, color: c.stone }}>{m.phone}</span></div>
@@ -2565,10 +2587,10 @@ function LoyaltyPanel({ c, truck, session }) {
                     <button key={r.id} onClick={() => redeem(m.phone, r)} style={{ background: c.bg, border: `1px solid ${c.gold}`, color: c.gold, borderRadius: 8, padding: "8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Redeem: {r.name} ({r.points_cost} pts)</button>
                   ))}
                   {rewards.filter((r) => r.points_cost <= m.points_balance).length === 0 && <p style={{ fontSize: 11, color: c.stone }}>Not enough points for any reward yet.</p>}
-                  <button onClick={() => setRedeemFor(null)} style={{ background: "none", border: "1px solid rgba(255,255,255,0.35)", color: c.stone, borderRadius: 8, padding: "6px", fontSize: 11, cursor: "pointer" }}>Cancel</button>
+                  <button onClick={() => setRedeemFor(null)} style={{ background: "none", border: "1px solid var(--dash-border)", color: c.stone, borderRadius: 8, padding: "6px", fontSize: 11, cursor: "pointer" }}>Cancel</button>
                 </div>
               ) : (
-                <button onClick={() => setRedeemFor(m.phone)} style={{ marginTop: 8, background: "none", border: "1px solid rgba(255,255,255,0.35)", color: c.stone, borderRadius: 8, padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>Redeem a reward</button>
+                <button onClick={() => setRedeemFor(m.phone)} style={{ marginTop: 8, background: "none", border: "1px solid var(--dash-border)", color: c.stone, borderRadius: 8, padding: "6px 12px", fontSize: 11, cursor: "pointer" }}>Redeem a reward</button>
               )}
             </div>
           ))}
@@ -2755,7 +2777,7 @@ function ThemeColorsPanel({ c, truck, theme, session, reload }) {
   return (
     <div>
       {/* Live preview so the effect of a color is obvious before saving */}
-      <div style={{ background: draft.color_bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: 12, marginBottom: 14 }}>
+      <div style={{ background: draft.color_bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: 12, marginBottom: 14 }}>
         <div style={{ color: draft.color_gold, fontSize: 10, letterSpacing: 2, fontWeight: 700, marginBottom: 6 }}>PREVIEW</div>
         <div style={{ background: draft.color_card, borderRadius: 8, padding: 10 }}>
           <div style={{ color: draft.color_cream, fontWeight: 700, fontSize: 13 }}>Al Pastor Taco</div>
@@ -2787,7 +2809,7 @@ function ThemeColorsPanel({ c, truck, theme, session, reload }) {
 
       {error && <p style={{ color: c.red, fontSize: 11, marginTop: 10 }}>{error}</p>}
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <button onClick={() => setDraft(seed())} style={{ flex: 1, background: "none", border: `1px solid rgba(255,255,255,0.35)`, color: c.stone, padding: "11px", borderRadius: 10, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Undo changes</button>
+        <button onClick={() => setDraft(seed())} style={{ flex: 1, background: "none", border: `1px solid var(--dash-border)`, color: c.stone, padding: "11px", borderRadius: 10, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Undo changes</button>
         <button onClick={save} disabled={saving} style={{ flex: 2, background: c.gold, color: "#1A1210", border: "none", padding: "11px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
           {saving ? "Saving…" : saved ? "✓ Saved — live on your site" : "Save Colors"}
         </button>
@@ -2851,7 +2873,7 @@ function TemplateSwitcher({ c, truck, theme, session, reload }) {
             key={t.key}
             onClick={() => apply(t)}
             disabled={!!applying}
-            style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 12, alignItems: "center", textAlign: "left", background: isActive(t) ? `${c.gold}18` : "transparent", border: `2px solid ${isActive(t) ? c.gold : "rgba(255,255,255,0.35)"}`, borderRadius: 12, padding: 10, cursor: applying ? "wait" : "pointer" }}
+            style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 12, alignItems: "center", textAlign: "left", background: isActive(t) ? `${c.gold}18` : "transparent", border: `2px solid ${isActive(t) ? c.gold : "var(--dash-border)"}`, borderRadius: 12, padding: 10, cursor: applying ? "wait" : "pointer" }}
           >
             <div style={{ width: 72, height: 72, overflow: "hidden", borderRadius: 9, flexShrink: 0 }}>
               <div style={{ transform: "scale(0.857)", transformOrigin: "top left" }}><TemplateThumb t={t} /></div>
@@ -2911,22 +2933,22 @@ function AccountPanel({ c, session, bare }) {
   };
 
   return (
-    <div style={bare ? {} : { background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+    <div style={bare ? {} : { background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
       {!bare && <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Account</div>}
       <label className="mono" style={{ fontSize: 10, color: c.stone }}>LOGIN EMAIL</label>
-      <div style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", color: c.stone, marginTop: 6, marginBottom: 16, fontSize: 14 }}>{session.email}</div>
+      <div style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", color: c.stone, marginTop: 6, marginBottom: 16, fontSize: 14 }}>{session.email}</div>
 
       <label className="mono" style={{ fontSize: 10, color: c.stone }}>NEW PASSWORD</label>
       <input
         type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
         placeholder="At least 8 characters"
-        style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 10, fontSize: 14 }}
+        style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 10, fontSize: 14 }}
       />
       <label className="mono" style={{ fontSize: 10, color: c.stone }}>CONFIRM NEW PASSWORD</label>
       <input
         type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
         placeholder="Retype the new password"
-        style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }}
+        style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginTop: 6, marginBottom: 14, fontSize: 14 }}
       />
       {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
       <button
@@ -2957,7 +2979,7 @@ function KitchenPinPanel({ c, truck, session, bare }) {
   };
 
   return (
-    <div style={bare ? {} : { background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+    <div style={bare ? {} : { background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
       {!bare && <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Kitchen Access PIN</div>}
       <p style={{ fontSize: 11, color: c.stone, marginBottom: 12 }}>
         Give this PIN to whoever's cooking. They enter it at <span className="mono">/{truck.slug}/kitchen</span> to see incoming order tickets — no login needed.
@@ -2965,7 +2987,7 @@ function KitchenPinPanel({ c, truck, session, bare }) {
       <input
         value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
         placeholder="4-6 digit PIN" inputMode="numeric"
-        style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 10, fontSize: 14, letterSpacing: 2 }}
+        style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", color: c.cream, marginBottom: 10, fontSize: 14, letterSpacing: 2 }}
       />
       {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
       <button onClick={save} disabled={saving} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "10px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
@@ -3023,11 +3045,11 @@ function MarketingPanel({ c, truck, audienceCount, campaigns, session, onSent })
           <>
             <input
               value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject"
-              style={{ width: "100%", background: "#1A1512", border: "1px solid rgba(255,255,255,0.35)", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 8 }}
+              style={{ width: "100%", background: c.bg, border: "1px solid var(--dash-border)", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 8 }}
             />
             <textarea
               value={body} onChange={(e) => setBody(e.target.value)} placeholder="What do you want to tell your customers?" rows={5}
-              style={{ width: "100%", background: "#1A1512", border: "1px solid rgba(255,255,255,0.35)", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 10, resize: "vertical", fontFamily: "inherit" }}
+              style={{ width: "100%", background: c.bg, border: "1px solid var(--dash-border)", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 10, resize: "vertical", fontFamily: "inherit" }}
             />
             <p style={{ fontSize: 10.5, color: c.stone, marginBottom: 10 }}>Every email includes an unsubscribe link automatically.</p>
             {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
@@ -3117,7 +3139,7 @@ function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
               style={{
                 flexShrink: 0, background: activeCategory === cat.id ? c.gold : "none",
                 color: activeCategory === cat.id ? "#1A1210" : c.stone,
-                border: `1px solid ${activeCategory === cat.id ? c.gold : "rgba(255,255,255,0.35)"}`,
+                border: `1px solid ${activeCategory === cat.id ? c.gold : "var(--dash-border)"}`,
                 borderRadius: 999, padding: "7px 13px", fontSize: 11, fontWeight: 700, letterSpacing: 0.3, cursor: "pointer", whiteSpace: "nowrap", textTransform: "uppercase",
               }}
             >
@@ -3129,7 +3151,7 @@ function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: cartCount > 0 ? 14 : 4 }}>
         {shown.map((item) => (
-          <div key={item.id} style={{ ...glass(c, { radius: 14, opacity: 0.4, blur: 12 }), border: `1px solid ${cart[item.id] > 0 ? c.gold : "rgba(255,255,255,0.35)"}`, overflow: "hidden" }}>
+          <div key={item.id} style={{ ...glass(c, { radius: 14, opacity: 0.4, blur: 12 }), border: `1px solid ${cart[item.id] > 0 ? c.gold : "var(--dash-border)"}`, overflow: "hidden" }}>
             <div style={{ height: 84, background: item.photo_url ? `url(${item.photo_url}) center/cover` : "#0E0B09", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {!item.photo_url && <ImageIcon size={18} color={c.stone} />}
             </div>
@@ -3137,7 +3159,7 @@ function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</div>
               <div className="mono" style={{ fontSize: 11, color: c.gold, marginBottom: 8 }}>${Number(item.price).toFixed(2)}</div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <button onClick={() => bump(item.id, -1)} style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid rgba(255,255,255,0.35)", borderRadius: "50%", width: 24, height: 24, color: c.cream, cursor: "pointer" }}><Minus size={12} /></button>
+                <button onClick={() => bump(item.id, -1)} style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid var(--dash-border)", borderRadius: "50%", width: 24, height: 24, color: c.cream, cursor: "pointer" }}><Minus size={12} /></button>
                 <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: cart[item.id] > 0 ? c.gold : c.cream }}>{cart[item.id] || 0}</span>
                 <button onClick={() => bump(item.id, 1)} style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: `1px solid ${c.gold}`, borderRadius: "50%", width: 24, height: 24, color: c.gold, cursor: "pointer" }}><Plus size={12} /></button>
               </div>
@@ -3158,12 +3180,12 @@ function TakeOrderPanel({ c, truck, menu, categories, session, onCreated }) {
       <input
         value={customerName} onChange={(e) => setCustomerName(e.target.value)}
         placeholder="Customer name"
-        style={{ width: "100%", background: "#1A1512", border: "1px solid rgba(255,255,255,0.35)", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 8 }}
+        style={{ width: "100%", background: c.bg, border: "1px solid var(--dash-border)", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 8 }}
       />
       <input
         value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)}
         placeholder="Email (optional)" type="email"
-        style={{ width: "100%", background: "#1A1512", border: "1px solid rgba(255,255,255,0.35)", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 10 }}
+        style={{ width: "100%", background: c.bg, border: "1px solid var(--dash-border)", borderRadius: 10, padding: "10px 12px", color: c.cream, fontSize: 13, marginBottom: 10 }}
       />
       {error && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{error}</p>}
       <button
@@ -3196,11 +3218,11 @@ function hexAlpha(hex, a) {
 }
 
 // Shared "Liquid Glass" surface style, matching the formula the Home tab
-// shipped with -- translucent card color, blurred backdrop, a bold white
-// border and a layered shadow (drop + inner highlight + soft glow) so each
-// panel reads as a distinct, separated surface rather than blending into
-// the page behind it.
-const GLASS_BORDER = "rgba(255,255,255,0.35)";
+// shipped with -- translucent card color, blurred backdrop, a bold border
+// (--dash-border, set on the Dashboard root and flipped by the light/dark
+// toggle) and a layered shadow so each panel reads as a distinct surface
+// rather than blending into the page behind it.
+const GLASS_BORDER = "var(--dash-border)";
 function glass(c, { radius = 20, opacity = 0.55, blur = 18 } = {}) {
   return {
     background: hexAlpha(c.card, opacity),
@@ -3222,7 +3244,7 @@ function glass(c, { radius = 20, opacity = 0.55, blur = 18 } = {}) {
    Nav is Home | Orders | Menu | Website | More: operational things an owner
    checks daily (is it open, where's it parked, what are today's orders) up
    front, configuration/settings things collapsed under Website and More. */
-function Dashboard({ c, data, session, onLogout, goSite, role }) {
+function Dashboard({ c, data, session, onLogout, goSite, role, dashMode, onToggleDashMode }) {
   const isAdmin = role === "admin";
   const { truck, theme: themeRow, location: initialLocation, menu: initialMenu, faqs: initialFaqs, categories: initialCategories, loadOrders, reload } = data;
 
@@ -3442,9 +3464,9 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
 
   if (view === "trucks") {
     return (
-      <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh" }}>
+      <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh", "--dash-border": c.border }}>
         <style>{`${fontImport} .mono { font-family: 'JetBrains Mono', monospace; }`}</style>
-        <nav style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(14,11,9,0.95)", borderBottom: `1px solid rgba(255,255,255,0.35)`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <nav style={{ position: "sticky", top: 0, zIndex: 40, background: hexAlpha(c.bg, 0.92), backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid var(--dash-border)`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <button onClick={() => setView("dashboard")} style={{ background: "none", border: "none", color: c.stone, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>← Back to Dashboard</button>
           <span className="mono" style={{ fontSize: 12, color: c.gold, letterSpacing: 1 }}>ALL TRUCKS</span>
           <button onClick={onLogout} style={{ background: "none", border: "none", color: c.stone, cursor: "pointer" }}><LogOut size={16} /></button>
@@ -3455,19 +3477,19 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
   }
 
   return (
-    <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh" }}>
+    <div style={{ background: c.bg, color: c.cream, fontFamily: "'Inter', system-ui, sans-serif", minHeight: "100vh", "--dash-border": c.border }}>
       <style>{`
         ${fontImport}
         .mono { font-family: 'JetBrains Mono', monospace; } .display { font-family: 'Oswald', sans-serif; text-transform: uppercase; } .scrollx::-webkit-scrollbar { display: none; }
       `}</style>
 
-      <nav style={{ position: "sticky", top: 0, zIndex: 40, background: hexAlpha(c.bg, 0.72), backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid rgba(255,255,255,0.35)`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <nav style={{ position: "sticky", top: 0, zIndex: 40, background: hexAlpha(c.bg, 0.72), backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid var(--dash-border)`, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <button onClick={goSite} className="display" style={{ background: "none", border: "none", color: c.gold, cursor: "pointer", fontSize: 14, letterSpacing: 0.5 }}>VendorGrub</button>
         <span className="mono" style={{ fontSize: 12, color: c.gold, letterSpacing: 1 }}>{isAdmin ? session.email : `${truck.name} — Owner`}</span>
         <button onClick={onLogout} style={{ background: "none", border: "none", color: c.stone, cursor: "pointer" }}><LogOut size={16} /></button>
       </nav>
 
-      <div style={{ display: "flex", gap: 4, padding: "8px 10px", background: hexAlpha(c.bg, 0.72), backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid rgba(255,255,255,0.35)` }}>
+      <div style={{ display: "flex", gap: 4, padding: "8px 10px", background: hexAlpha(c.bg, 0.72), backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid var(--dash-border)` }}>
         {[["home", "Home"], ["orders", "Orders"], ["menu", "Menu"], ["website", "My Website"], ["marketing", "Marketing"], ["more", "More"]].map(([key, label]) => (
           <button
             key={key} onClick={() => setTab(key)}
@@ -3493,7 +3515,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
 
             <h1 className="display" style={{ fontSize: 19, fontWeight: 700, marginBottom: 16, position: "relative" }}>{greeting()}, {truck.name} 👋</h1>
 
-            <div style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 20, padding: 18, marginBottom: 16, boxShadow: `0 8px 30px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.05)`, position: "relative" }}>
+            <div style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid var(--dash-border)`, borderRadius: 20, padding: 18, marginBottom: 16, boxShadow: `0 8px 30px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.05)`, position: "relative" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: status === "OPEN" ? c.green : c.red, flexShrink: 0, boxShadow: `0 0 10px ${status === "OPEN" ? c.green : c.red}` }} />
                 <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: 0.5 }}>{status === "OPEN" ? "OPEN" : "CLOSED"}</span>
@@ -3540,7 +3562,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
                 [todaysOrders.length, "Orders Today"],
                 [`$${todaysValue.toFixed(0)}`, "Today's Value"],
               ].map(([value, label]) => (
-                <div key={label} style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 16, padding: "14px 10px", textAlign: "center", boxShadow: `0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.05)` }}>
+                <div key={label} style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid var(--dash-border)`, borderRadius: 16, padding: "14px 10px", textAlign: "center", boxShadow: `0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.05)` }}>
                   <div className="mono" style={{ fontSize: 21, fontWeight: 800, color: c.gold, textShadow: `0 0 18px ${hexAlpha(c.gold, 0.35)}` }}>{value}</div>
                   <div style={{ fontSize: 10, color: c.stone, marginTop: 3, letterSpacing: 0.3 }}>{label}</div>
                 </div>
@@ -3548,8 +3570,8 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16, position: "relative" }}>
-              <button onClick={() => setTab("orders")} style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 16, padding: "16px 14px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left", boxShadow: `0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.05)` }}>+ Take Order</button>
-              <button onClick={() => setTab("menu")} style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 16, padding: "16px 14px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left", boxShadow: `0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.05)` }}>+ Add Menu Item</button>
+              <button onClick={() => setTab("orders")} style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid var(--dash-border)`, borderRadius: 16, padding: "16px 14px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left", boxShadow: `0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.05)` }}>+ Take Order</button>
+              <button onClick={() => setTab("menu")} style={{ background: hexAlpha(c.card, 0.55), backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid var(--dash-border)`, borderRadius: 16, padding: "16px 14px", color: c.cream, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textAlign: "left", boxShadow: `0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.05)` }}>+ Add Menu Item</button>
             </div>
 
             <SetupChecklist
@@ -3625,9 +3647,9 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
                 {!newItem.photoPreview && <><ImageIcon size={20} color={c.stone} /><span style={{ fontSize: 11, color: c.stone }}>Add a photo</span></>}
                 <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => e.target.files[0] && setNewItem((s) => ({ ...s, photoFile: e.target.files[0], photoPreview: URL.createObjectURL(e.target.files[0]) }))} />
               </label>
-              <input value={newItem.name} onChange={(e) => setNewItem((s) => ({ ...s, name: e.target.value }))} placeholder="Item name…" style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
-              <input value={newItem.description} onChange={(e) => setNewItem((s) => ({ ...s, description: e.target.value }))} placeholder="Description…" style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
-              <input value={newItem.price} onChange={(e) => setNewItem((s) => ({ ...s, price: e.target.value }))} type="number" step="0.01" placeholder="Price" style={{ width: "100%", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+              <input value={newItem.name} onChange={(e) => setNewItem((s) => ({ ...s, name: e.target.value }))} placeholder="Item name…" style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+              <input value={newItem.description} onChange={(e) => setNewItem((s) => ({ ...s, description: e.target.value }))} placeholder="Description…" style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+              <input value={newItem.price} onChange={(e) => setNewItem((s) => ({ ...s, price: e.target.value }))} type="number" step="0.01" placeholder="Price" style={{ width: "100%", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
               {newItemError && <p style={{ color: c.red, fontSize: 11, marginBottom: 8 }}>{newItemError}</p>}
               <button onClick={addMenuItem} disabled={addingItem} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "10px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer", opacity: addingItem ? 0.6 : 1 }}>
                 {addingItem ? "Adding…" : "+ Add to Menu"}
@@ -3652,7 +3674,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
                     {item.description && <p style={{ fontSize: 11, color: c.stone, margin: "2px 0 6px", lineHeight: 1.3 }}>{item.description}</p>}
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span className="mono" style={{ fontSize: 11, color: c.stone }}>$</span>
-                      <input type="number" step="0.01" defaultValue={item.price} onBlur={(e) => updatePrice(item, e.target.value)} style={{ width: 60, background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 6, padding: "4px 6px", color: c.cream, fontSize: 11 }} />
+                      <input type="number" step="0.01" defaultValue={item.price} onBlur={(e) => updatePrice(item, e.target.value)} style={{ width: 60, background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 6, padding: "4px 6px", color: c.cream, fontSize: 11 }} />
                       <button onClick={() => toggleSoldOut(item)} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: item.sold_out ? c.red : c.green, cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
                         {item.sold_out ? <><EyeOff size={11} /> SOLD OUT</> : <><Eye size={11} /> AVAILABLE</>}
                       </button>
@@ -3679,8 +3701,8 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={goSite} style={{ flex: 1, background: c.gold, color: "#1A1210", border: "none", padding: "10px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>View Site</button>
-              <button onClick={copyLink} style={{ flex: 1, background: "none", border: `1px solid rgba(255,255,255,0.35)`, color: c.cream, padding: "10px", borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Copy Link</button>
-              <button onClick={downloadQR} style={{ flex: 1, background: "none", border: `1px solid rgba(255,255,255,0.35)`, color: c.cream, padding: "10px", borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Download QR</button>
+              <button onClick={copyLink} style={{ flex: 1, background: "none", border: `1px solid var(--dash-border)`, color: c.cream, padding: "10px", borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Copy Link</button>
+              <button onClick={downloadQR} style={{ flex: 1, background: "none", border: `1px solid var(--dash-border)`, color: c.cream, padding: "10px", borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Download QR</button>
             </div>
           </div>
 
@@ -3704,7 +3726,7 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
           <Collapsible c={c} icon={<MessageCircle size={17} />} title="Customer questions" summary="Whatever you add here, your site's chatbot knows instantly">
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
               {faqs.map((f) => (
-                <div key={f.id} style={{ background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px" }}>
+                <div key={f.id} style={{ background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                     <div style={{ flex: 1 }}>
                       <span style={{ fontSize: 12.5, fontWeight: 700 }}>{f.question}</span>
@@ -3715,14 +3737,14 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
                 </div>
               ))}
             </div>
-            <div style={{ background: c.bg, border: `1px dashed rgba(255,255,255,0.35)`, borderRadius: 10, padding: 12 }}>
-              <input value={newQ} onChange={(e) => setNewQ(e.target.value)} placeholder="New question customers ask…" style={{ width: "100%", background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
-              <textarea value={newA} onChange={(e) => setNewA(e.target.value)} placeholder="Your answer…" rows={2} style={{ width: "100%", background: c.card, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8, resize: "vertical" }} />
+            <div style={{ background: c.bg, border: `1px dashed var(--dash-border)`, borderRadius: 10, padding: 12 }}>
+              <input value={newQ} onChange={(e) => setNewQ(e.target.value)} placeholder="New question customers ask…" style={{ width: "100%", background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8 }} />
+              <textarea value={newA} onChange={(e) => setNewA(e.target.value)} placeholder="Your answer…" rows={2} style={{ width: "100%", background: c.card, border: `1px solid var(--dash-border)`, borderRadius: 8, padding: "8px 10px", color: c.cream, fontSize: 12, marginBottom: 8, resize: "vertical" }} />
               <button onClick={addFaq} style={{ width: "100%", background: c.gold, color: "#1A1210", border: "none", padding: "9px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Add to Chatbot</button>
             </div>
           </Collapsible>
 
-          <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid rgba(255,255,255,0.35)` }}>
+          <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid var(--dash-border)` }}>
             <LivePreviewFrame
               truck={truck} theme={themeRow} draft={profileDraft}
               location={{ ...initialLocation, spot, open_until: until, status, lat, lng }}
@@ -3754,10 +3776,23 @@ function Dashboard({ c, data, session, onLogout, goSite, role }) {
             <LoyaltyPanel c={c} truck={truck} session={session} />
           </Collapsible>
 
+          <div style={{ ...glass(c, { radius: 14 }), padding: 14, marginBottom: 16 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 2 }}>Dashboard Appearance</div>
+            <div style={{ fontSize: 10, color: c.stone, marginBottom: 10 }}>Just for your view — doesn't change how customers see your site.</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => dashMode !== "dark" && onToggleDashMode()} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px", borderRadius: 999, border: `1px solid ${dashMode === "dark" ? c.gold : "var(--dash-border)"}`, background: dashMode === "dark" ? hexAlpha(c.gold, 0.14) : "transparent", color: dashMode === "dark" ? c.gold : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                <Moon size={13} /> Dark
+              </button>
+              <button onClick={() => dashMode !== "light" && onToggleDashMode()} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px", borderRadius: 999, border: `1px solid ${dashMode === "light" ? c.gold : "var(--dash-border)"}`, background: dashMode === "light" ? hexAlpha(c.gold, 0.14) : "transparent", color: dashMode === "light" ? c.gold : c.stone, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                <Sun size={13} /> Light
+              </button>
+            </div>
+          </div>
+
           {isAdmin && (
             <>
               <Collapsible c={c} icon={<Store size={17} />} title="Marketplace listing" summary="Shows up on /trucks for real customers to find and order from">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: c.bg, border: `1px solid rgba(255,255,255,0.35)`, borderRadius: 10, padding: "10px 12px", marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: c.bg, border: `1px solid var(--dash-border)`, borderRadius: 10, padding: "10px 12px", marginBottom: 14 }}>
                   <div>
                     <div style={{ fontSize: 12.5, fontWeight: 600 }}>Public Marketplace Listing</div>
                     <div style={{ fontSize: 10, color: c.stone, marginTop: 2 }}>Shows up on /trucks for real customers to find and order from.</div>
