@@ -2307,9 +2307,21 @@ function LivePreviewFrame({ truck, theme, location, menu, faqs, categories, draf
       <div style={{ display: "flex", justifyContent: "center" }}>
         <div style={{ width: 300, background: "#0A0A0A", borderRadius: 46, padding: "16px 10px", boxShadow: "0 24px 60px rgba(0,0,0,0.5), inset 0 0 0 2px #2A2A2A", position: "relative" }}>
           <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", width: 120, height: 26, background: "#000", borderRadius: 14, zIndex: 2 }} />
-          <div style={{ borderRadius: 32, overflow: "hidden", height: 600, background: "#000" }}>
-            <div style={{ height: "100%", overflowY: "auto" }}>
-              <CustomerSite c={previewColors} data={previewData} demoMode />
+          {/* The screen area is inset an extra 26px below the notch (its own
+              height) rather than starting flush with it -- the site's sticky
+              header is position:sticky/top:0 within this scroll area, so
+              without that gap it permanently rests right under the notch,
+              which then paints over part of the header text every time. */}
+          <div style={{ marginTop: 26, borderRadius: 32, overflow: "hidden", height: 574, background: "#000" }}>
+            {/* CustomerSite is built for a real ~390px phone viewport, wider
+                than this 280px screen -- rendering it at native size here
+                (as before) overflowed and made individual cards look
+                oversized. Render it at its real width, then shrink the
+                whole thing uniformly so it's a true scaled-down preview. */}
+            <div style={{ width: 280, height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+              <div style={{ width: 390, transform: "scale(0.7179)", transformOrigin: "top left" }}>
+                <CustomerSite c={previewColors} data={previewData} demoMode />
+              </div>
             </div>
           </div>
           <div style={{ position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)", width: 110, height: 4, background: "#3A3A3A", borderRadius: 999 }} />
@@ -3450,7 +3462,40 @@ function Dashboard({ c, data, session, onLogout, goSite, role, dashMode, onToggl
     link.href = canvas.toDataURL("image/png");
     link.click();
   };
-  const copyLink = () => navigator.clipboard.writeText(fullSiteUrl);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  const copyLink = async () => {
+    setCopyError(false);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(fullSiteUrl);
+      } else {
+        throw new Error("Clipboard API unavailable");
+      }
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 1800);
+    } catch {
+      // Some mobile browsers block navigator.clipboard outside a few narrow
+      // conditions -- fall back to the old select-and-copy trick so the
+      // button still works instead of silently doing nothing.
+      try {
+        const input = document.createElement("textarea");
+        input.value = fullSiteUrl;
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.focus();
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 1800);
+      } catch {
+        setCopyError(true);
+        setTimeout(() => setCopyError(false), 2200);
+      }
+    }
+  };
 
   const activeOrders = orders.filter((o) => o.status !== "completed");
   const todaysOrders = orders.filter((o) => new Date(o.created_at).toDateString() === new Date().toDateString());
@@ -3701,7 +3746,9 @@ function Dashboard({ c, data, session, onLogout, goSite, role, dashMode, onToggl
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={goSite} style={{ flex: 1, background: c.gold, color: "#1A1210", border: "none", padding: "10px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>View Site</button>
-              <button onClick={copyLink} style={{ flex: 1, background: "none", border: `1px solid var(--dash-border)`, color: c.cream, padding: "10px", borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Copy Link</button>
+              <button onClick={copyLink} style={{ flex: 1, background: "none", border: `1px solid ${copyError ? c.red : "var(--dash-border)"}`, color: copyError ? c.red : linkCopied ? c.green : c.cream, padding: "10px", borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+                {copyError ? "Couldn't copy" : linkCopied ? "✓ Copied" : "Copy Link"}
+              </button>
               <button onClick={downloadQR} style={{ flex: 1, background: "none", border: `1px solid var(--dash-border)`, color: c.cream, padding: "10px", borderRadius: 8, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Download QR</button>
             </div>
           </div>
