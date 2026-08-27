@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
-import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, ArrowRight, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Palette, Image as ImageIcon, Lock, Moon, Sun } from "lucide-react";
+import { Flame, Star, Clock, Plus, Minus, ShoppingCart, MapPin, Phone, Instagram, Facebook, X, LayoutDashboard, ArrowLeft, ArrowRight, Truck, Store, CheckCircle2, Circle, EyeOff, Eye, MessageCircle, Send, Trash2, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Palette, Image as ImageIcon, Lock, Moon, Sun, Download } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -27,7 +27,8 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // truck in the "All Trucks" panel makes it live at /{slug} immediately, no redeploy needed.
 const PATH_PARTS = window.location.pathname.split("/").filter(Boolean);
 const PATH_SLUG = PATH_PARTS[0] || null;
-const PATH_SUB = PATH_PARTS[1] || null; // "manage" | "kitchen" | null (storefront)
+const PATH_SUB = PATH_PARTS[1] || null; // "manage" | "kitchen" | "order" | null (storefront)
+const PATH_ORDER_ID = PATH_PARTS[2] || null; // set when PATH_SUB === "order"
 
 const rest = (path, opts = {}) =>
   fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -1060,6 +1061,122 @@ function RewardsCheck({ slug }) {
   );
 }
 
+// Public, no-login order tracker -- reached by scanning/tapping the QR code
+// on the checkout confirmation screen. Polls for status while open so it
+// updates live as the truck advances the order, same 4-stage lifecycle the
+// owner dashboard already uses (new -> preparing -> ready -> completed).
+const ORDER_STAGES = [
+  { key: "new", label: "Order Received" },
+  { key: "preparing", label: "Preparing" },
+  { key: "ready", label: "Ready" },
+  { key: "completed", label: "Picked Up" },
+];
+function OrderStatusPage({ slug, orderId }) {
+  const c = COLORS_FALLBACK;
+  const [order, setOrder] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let stopped = false;
+    const load = async () => {
+      const res = await fn("check-order-status", { order_id: orderId });
+      if (stopped) return;
+      setLoading(false);
+      if (res.error) { setError(res.error); return; }
+      setError("");
+      setOrder(res);
+    };
+    load();
+    const interval = setInterval(() => {
+      // Stop polling once the order is done -- nothing left to update, and
+      // no reason to keep pinging every 12s on an old tab someone left open.
+      setOrder((cur) => {
+        if (cur?.status === "completed") { clearInterval(interval); return cur; }
+        return cur;
+      });
+      load();
+    }, 12000);
+    return () => { stopped = true; clearInterval(interval); };
+  }, [orderId]);
+
+  const stageIndex = order ? ORDER_STAGES.findIndex((s) => s.key === order.status) : -1;
+
+  return (
+    <div style={{ background: c.bg, color: c.cream, minHeight: "100vh", fontFamily: "system-ui", padding: 24 }}>
+      <div style={{ maxWidth: 380, margin: "0 auto" }}>
+        {loading && <p style={{ fontSize: 13, color: c.stone, textAlign: "center", marginTop: 60 }}>Loading your order…</p>}
+
+        {!loading && error && (
+          <div style={{ textAlign: "center", marginTop: 60 }}>
+            <p style={{ fontSize: 14, color: c.red, marginBottom: 8 }}>{error}</p>
+            <p style={{ fontSize: 12, color: c.stone }}>Double-check the link, or ask the truck to look up your order.</p>
+          </div>
+        )}
+
+        {!loading && !error && order && (
+          <>
+            <p style={{ fontSize: 11, color: c.stone, textAlign: "center", letterSpacing: 1, marginBottom: 2 }}>{order.truck_name?.toUpperCase()}</p>
+            <h1 style={{ fontSize: 22, fontWeight: 700, textAlign: "center", marginBottom: 4 }}>Order #{String(order.order_number).padStart(3, "0")}</h1>
+            <p style={{ fontSize: 12, color: c.stone, textAlign: "center", marginBottom: 28 }}>
+              Placed {new Date(order.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+            </p>
+
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 28 }}>
+              {ORDER_STAGES.map((stage, i) => (
+                <div key={stage.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+                  {i > 0 && (
+                    <div style={{ position: "absolute", top: 13, right: "50%", width: "100%", height: 2, background: i <= stageIndex ? c.gold : "#2A2420", zIndex: 0 }} />
+                  )}
+                  <div style={{
+                    width: 26, height: 26, borderRadius: "50%", zIndex: 1,
+                    background: i < stageIndex ? c.gold : i === stageIndex ? c.gold : "#1A1512",
+                    border: `2px solid ${i <= stageIndex ? c.gold : "#2A2420"}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    {i < stageIndex ? <CheckCircle2 size={14} color="#1A1210" /> : i === stageIndex ? <Circle size={10} color="#1A1210" fill="#1A1210" /> : null}
+                  </div>
+                  <span style={{ fontSize: 9.5, color: i <= stageIndex ? c.gold : c.stone, marginTop: 6, textAlign: "center", fontWeight: i === stageIndex ? 700 : 500 }}>{stage.label}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ background: c.card, border: "1px solid #2A2420", borderRadius: 14, padding: 16, marginBottom: 16, textAlign: "center" }}>
+              <p style={{ fontSize: 15, fontWeight: 700, color: c.gold }}>
+                {order.status === "new" && "Your order's in — the truck hasn't started yet."}
+                {order.status === "preparing" && "🔥 Cooking it up right now."}
+                {order.status === "ready" && (order.fulfillment === "pickup" ? "✅ Ready — come grab it!" : "✅ Ready — out for delivery soon.")}
+                {order.status === "completed" && (order.fulfillment === "pickup" ? "Picked up. Enjoy!" : "Delivered. Enjoy!")}
+              </p>
+            </div>
+
+            <div style={{ background: c.card, border: "1px solid #2A2420", borderRadius: 14, padding: 16, marginBottom: 20 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+                {(order.items || []).map((it, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: c.cream }}>
+                    <span>{it.qty}x {it.name}</span>
+                    <span className="mono">${(Number(it.price) * it.qty).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 14, paddingTop: 10, borderTop: "1px dashed #3A322C" }}>
+                <span>Total</span>
+                <span className="mono" style={{ color: c.gold }}>${Number(order.total).toFixed(2)}</span>
+              </div>
+            </div>
+
+            {order.fulfillment === "delivery" && order.delivery_address && (
+              <p style={{ fontSize: 12, color: c.stone, textAlign: "center", marginBottom: 16 }}>Delivering to {order.delivery_address}</p>
+            )}
+          </>
+        )}
+
+        <a href={`/${slug}`} style={{ display: "block", textAlign: "center", marginTop: 12, fontSize: 12, color: c.stone }}>← Back to menu</a>
+      </div>
+    </div>
+  );
+}
+
 function KitchenDashboard({ slug }) {
   const c = { bg: "#0E0B09", card: "#1A1512", gold: "#D4A537", red: "#C4281C", cream: "#F3E9D8", stone: "#8C8074", green: "#4CA466" };
   const pinKey = `kitchen_pin_${slug}`;
@@ -1318,6 +1435,9 @@ export default function App() {
   }
   if (PATH_SUB === "unsubscribe") {
     return <UnsubscribePage slug={PATH_SLUG} />;
+  }
+  if (PATH_SUB === "order" && PATH_ORDER_ID) {
+    return <OrderStatusPage slug={PATH_SLUG} orderId={PATH_ORDER_ID} />;
   }
 
   if (data.loading) {
@@ -1835,6 +1955,9 @@ function CustomerSite({ c, data, demoMode }) {
             <button onClick={() => setResult(null)} style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", color: c.stone, cursor: "pointer" }}><X size={18} /></button>
             <span className="script" style={{ fontSize: 22, color: c.gold }}>{demoMode ? "This Was a Demo!" : "Order Sent!"}</span>
             {demoMode && <p style={{ fontSize: 11, color: c.gold, marginTop: 6 }}>No real order was placed — this is just a preview of what your customers would see.</p>}
+            {!demoMode && result?.order_number != null && (
+              <p className="mono" style={{ fontSize: 13, color: c.gold, marginTop: 6, fontWeight: 700 }}>Order #{String(result.order_number).padStart(3, "0")}</p>
+            )}
             {!demoMode && result?.loyalty_points_earned > 0 && (
               <p style={{ fontSize: 12, color: c.gold, marginTop: 8, fontWeight: 700 }}>🎁 You earned {result.loyalty_points_earned} points!</p>
             )}
@@ -1850,6 +1973,16 @@ function CustomerSite({ c, data, demoMode }) {
               {fulfillment === "pickup" ? `Head to ${location?.spot} and pay at the window when you grab it.` : `We'll text you when it's on the way — pay the driver on delivery.`}
             </p>
             <p className="mono" style={{ fontSize: 10, color: c.stone, marginTop: 10 }}>Order total: ${Number(result.total).toFixed(2)}</p>
+
+            {!demoMode && result?.order_id && (
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px dashed ${c.borderStrong}` }}>
+                <p style={{ fontSize: 11, color: c.stone, marginBottom: 10 }}>Scan to watch it get made in real time</p>
+                <div style={{ background: "#fff", borderRadius: 12, padding: 10, display: "inline-block", marginBottom: 10 }}>
+                  <QRCodeCanvas value={`${window.location.origin}/${truck.slug}/order/${result.order_id}`} size={110} fgColor="#0A0A0A" bgColor="#ffffff" />
+                </div>
+                <a href={`/${truck.slug}/order/${result.order_id}`} style={{ display: "block", fontSize: 12, color: c.gold, fontWeight: 700, textDecoration: "none" }}>Track My Order →</a>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3246,6 +3379,56 @@ function glass(c, { radius = 20, opacity = 0.55, blur = 18 } = {}) {
   };
 }
 
+// Buckets orders (already sorted newest-first) into labeled sections for
+// the Orders tab's audit view -- Today/Yesterday, then weekday names for
+// the rest of the last week, then actual dates beyond that. Preserves
+// input order, so sections come out newest-first without re-sorting.
+function groupOrdersByDate(orders) {
+  const now = new Date();
+  const todayStr = now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const yesterdayStr = yesterday.toDateString();
+
+  const groups = new Map();
+  for (const o of orders) {
+    const d = new Date(o.created_at);
+    const dStr = d.toDateString();
+    let label;
+    if (dStr === todayStr) label = "Today";
+    else if (dStr === yesterdayStr) label = "Yesterday";
+    else if ((now - d) / 86400000 < 7) label = d.toLocaleDateString([], { weekday: "long" });
+    else label = d.toLocaleDateString([], { month: "long", day: "numeric", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" });
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(o);
+  }
+  return groups;
+}
+
+// Bookkeeping export -- every order, one row each, quoted for anything
+// that might contain a comma (customer names, item lists).
+function downloadOrdersCsv(orders, truckSlug) {
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const header = ["Order #", "Date", "Time", "Customer", "Phone", "Email", "Items", "Fulfillment", "Status", "Total"];
+  const rows = orders.map((o) => {
+    const d = new Date(o.created_at);
+    const items = (o.items || []).map((it) => `${it.qty}x ${it.name}`).join("; ");
+    return [
+      o.order_number, d.toLocaleDateString(), d.toLocaleTimeString(),
+      o.customer_name, o.customer_phone || "", o.customer_email || "",
+      items, o.fulfillment, o.status, Number(o.total || 0).toFixed(2),
+    ].map(esc).join(",");
+  });
+  const csv = [header.map(esc).join(","), ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${truckSlug}-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 /* ============================= OWNER DASHBOARD SHELL =============================
    One shared dashboard for both admin-owned trucks and regular owners --
    they used to be two near-identical ~500-line components that only really
@@ -3500,6 +3683,37 @@ function Dashboard({ c, data, session, onLogout, goSite, role, dashMode, onToggl
   const activeOrders = orders.filter((o) => o.status !== "completed");
   const todaysOrders = orders.filter((o) => new Date(o.created_at).toDateString() === new Date().toDateString());
   const todaysValue = todaysOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const allOrdersRevenue = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const groupedOrders = showAllOrders ? groupOrdersByDate(orders) : null;
+  const renderOrderCard = (o) => (
+    <div key={o.id} style={{ ...glass(c, { radius: 16 }), borderLeft: `3px solid ${statusStyle[o.status]}`, padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="mono" style={{ fontSize: 13, fontWeight: 800 }}>#{String(o.order_number).padStart(3, "0")}</span>
+          <span style={{ background: hexAlpha(statusStyle[o.status], 0.18), color: statusStyle[o.status], borderRadius: 999, padding: "3px 9px", fontSize: 10, fontWeight: 800, letterSpacing: 0.5 }}>{statusLabel[o.status]}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          {o.fulfillment === "pickup" ? <Store size={11} color={c.stone} /> : <Truck size={11} color={c.stone} />}
+          <span className="mono" style={{ fontSize: 10, color: c.stone }}>{new Date(o.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+        </div>
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{o.customer_name}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
+        {(o.items || []).map((it, idx) => (
+          <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: c.stone }}>
+            <span>{it.qty} {it.name}</span>
+            <span className="mono">${(Number(it.price) * it.qty).toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 13, marginBottom: 12, paddingTop: 8, borderTop: "1px dashed #3A322C" }}>
+        <span>Total</span><span style={{ color: c.gold }}>${Number(o.total).toFixed(2)}</span>
+      </div>
+      <button onClick={() => advanceOrder(o)} disabled={o.status === "completed"} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "none", border: `1px solid ${statusStyle[o.status]}`, color: statusStyle[o.status], padding: "8px 12px", borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: o.status === "completed" ? "default" : "pointer" }}>
+        {o.status === "completed" ? <CheckCircle2 size={12} /> : <Circle size={12} />} {statusLabel[o.status]} {o.status !== "completed" && "— tap to advance"}
+      </button>
+    </div>
+  );
   const unsubscribedSet = new Set(unsubscribedEmails);
   const audienceCount = new Set(
     orders.map((o) => o.customer_email?.trim().toLowerCase()).filter((e) => e && !unsubscribedSet.has(e))
@@ -3643,37 +3857,44 @@ function Dashboard({ c, data, session, onLogout, goSite, role, dashMode, onToggl
               )}
             </div>
             {orders.length === 0 && <p style={{ fontSize: 12, color: c.stone }}>No orders yet.</p>}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {(showAllOrders ? orders : activeOrders).map((o) => (
-                <div key={o.id} style={{ ...glass(c, { radius: 16 }), borderLeft: `3px solid ${statusStyle[o.status]}`, padding: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span className="mono" style={{ fontSize: 13, fontWeight: 800 }}>#{String(o.order_number).padStart(3, "0")}</span>
-                      <span style={{ background: hexAlpha(statusStyle[o.status], 0.18), color: statusStyle[o.status], borderRadius: 999, padding: "3px 9px", fontSize: 10, fontWeight: 800, letterSpacing: 0.5 }}>{statusLabel[o.status]}</span>
+
+            {showAllOrders && orders.length > 0 && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
+                  {[
+                    [orders.length, "Total Orders"],
+                    [`$${allOrdersRevenue.toFixed(0)}`, "Total Revenue"],
+                    [`$${(allOrdersRevenue / orders.length).toFixed(2)}`, "Avg Order"],
+                  ].map(([value, label]) => (
+                    <div key={label} style={{ ...glass(c, { radius: 14 }), padding: "12px 8px", textAlign: "center" }}>
+                      <div className="mono" style={{ fontSize: 17, fontWeight: 800, color: c.gold }}>{value}</div>
+                      <div style={{ fontSize: 9.5, color: c.stone, marginTop: 2 }}>{label}</div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      {o.fulfillment === "pickup" ? <Store size={11} color={c.stone} /> : <Truck size={11} color={c.stone} />}
-                      <span className="mono" style={{ fontSize: 10, color: c.stone }}>{new Date(o.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{o.customer_name}</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
-                    {(o.items || []).map((it, idx) => (
-                      <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: c.stone }}>
-                        <span>{it.qty} {it.name}</span>
-                        <span className="mono">${(Number(it.price) * it.qty).toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 13, marginBottom: 12, paddingTop: 8, borderTop: "1px dashed #3A322C" }}>
-                    <span>Total</span><span style={{ color: c.gold }}>${Number(o.total).toFixed(2)}</span>
-                  </div>
-                  <button onClick={() => advanceOrder(o)} disabled={o.status === "completed"} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "none", border: `1px solid ${statusStyle[o.status]}`, color: statusStyle[o.status], padding: "8px 12px", borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: o.status === "completed" ? "default" : "pointer" }}>
-                    {o.status === "completed" ? <CheckCircle2 size={12} /> : <Circle size={12} />} {statusLabel[o.status]} {o.status !== "completed" && "— tap to advance"}
-                  </button>
+                  ))}
                 </div>
-              ))}
-            </div>
+                <button
+                  onClick={() => downloadOrdersCsv(orders, truck.slug)}
+                  style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, ...glass(c, { radius: 12 }), padding: "10px", color: c.cream, fontWeight: 700, fontSize: 12, cursor: "pointer", marginBottom: 16 }}
+                >
+                  <Download size={13} /> Download CSV
+                </button>
+              </>
+            )}
+
+            {showAllOrders ? (
+              Array.from(groupedOrders.entries()).map(([label, group]) => (
+                <div key={label} style={{ marginBottom: 16 }}>
+                  <div className="mono" style={{ fontSize: 10.5, color: c.stone, letterSpacing: 1, marginBottom: 8 }}>{label.toUpperCase()} · {group.length}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {group.map(renderOrderCard)}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {activeOrders.map(renderOrderCard)}
+              </div>
+            )}
           </div>
         </Reveal>
         )}
